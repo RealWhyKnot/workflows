@@ -1,0 +1,52 @@
+name: Release notes
+description: Categorised release notes from conventional commits, with GitHub handles resolved from the compare API.
+
+inputs:
+  tag:
+    description: Tag being released, for example v2026.9.7.1.
+    required: true
+  repository:
+    description: owner/name to read commits from. Defaults to the calling repository.
+    required: false
+    default: ''
+  previous-tag:
+    description: Override the tag to diff against. Resolved automatically when empty.
+    required: false
+    default: ''
+  title:
+    description: Optional H1 placed above the changes.
+    required: false
+    default: ''
+  extra:
+    description: Extra markdown appended after the changelog, for downloads and hashes.
+    required: false
+    default: ''
+
+outputs:
+  file:
+    description: Path to the generated markdown.
+    value: ${{ steps.notes.outputs.file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate release notes
+      id: notes
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $repository = '${{ inputs.repository }}'
+        if (-not $repository) { $repository = '${{ github.repository }}' }
+        $out = Join-Path '${{ runner.temp }}' 'release-notes.md'
+        & '${{ github.action_path }}/Generate-ReleaseNotes.ps1' `
+          -Tag '${{ inputs.tag }}' `
+          -Repository $repository `
+          -PreviousTag '${{ inputs.previous-tag }}' `
+          -Title '${{ inputs.title }}' `
+          -Extra '${{ inputs.extra }}' `
+          -OutFile $out
+        if ($LASTEXITCODE -ne 0) { throw "release notes generation failed ($LASTEXITCODE)" }
+        "file=$out" >> $env:GITHUB_OUTPUT
+        Write-Host '--- generated notes ---'
+        Get-Content -LiteralPath $out
