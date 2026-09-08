@@ -1,0 +1,34 @@
+name: Version sequence
+description: Fail unless a CalVer release tag uses the next same-day revision.
+
+inputs:
+  tag:
+    description: The tag being released, for example v2026.9.8.1.
+    required: true
+  prerelease-suffix:
+    description: >-
+      Regex for the part after the hyphen in a prerelease tag, without the hyphen.
+      Controls both what counts as a valid tag and which same-day tags count toward the next revision.
+    required: false
+    default: '[A-Za-z0-9]{4}'
+  repo-root:
+    description: Repository to read tags from. Defaults to the workspace.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Assert the release version sequence
+      shell: pwsh
+      env:
+        TAG: ${{ inputs.tag }}
+        PRERELEASE_SUFFIX: ${{ inputs.prerelease-suffix }}
+        REPO_ROOT: ${{ inputs.repo-root }}
+      run: |
+        $root = if ($env:REPO_ROOT) { $env:REPO_ROOT } else { '${{ github.workspace }}' }
+        & '${{ github.action_path }}/Assert-VersionSequence.ps1' `
+          -Tag "$env:TAG" `
+          -PrereleaseSuffix "$env:PRERELEASE_SUFFIX" `
+          -RepoRoot $root
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
