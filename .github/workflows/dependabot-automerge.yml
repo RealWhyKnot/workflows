@@ -1,0 +1,43 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_call:
+    inputs:
+      update-types:
+        description: Newline-separated dependabot update-type values that may auto-merge.
+        type: string
+        required: false
+        default: version-update:semver-patch
+      merge-method:
+        description: merge, squash or rebase.
+        type: string
+        required: false
+        default: rebase
+
+jobs:
+  automerge:
+    name: Enable auto-merge for allowed updates
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          ALLOWED: ${{ inputs.update-types }}
+          MERGE_METHOD: ${{ inputs.merge-method }}
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s\n' "$ALLOWED" | grep -qxF "$UPDATE_TYPE"; then
+            echo "$UPDATE_TYPE is not in the allowed list; leaving this PR alone."
+            exit 0
+          fi
+
+          gh pr merge --auto "--$MERGE_METHOD" "$PR_URL"

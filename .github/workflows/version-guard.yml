@@ -1,0 +1,41 @@
+name: Version guard
+
+on:
+  workflow_call:
+    inputs:
+      error-hint:
+        description: Sentence appended to the failure message, naming the pattern to use instead.
+        type: string
+        required: false
+        default: Use PackageInfo.FindForAssembly() instead.
+
+jobs:
+  no-hardcoded-versions:
+    name: Reject hardcoded version constants
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Scan for hardcoded Version constants
+        env:
+          ERROR_HINT: ${{ inputs.error-hint }}
+        run: |
+          set -euo pipefail
+
+          dirs=()
+          [ -d Editor ] && dirs+=(Editor)
+          [ -d Runtime ] && dirs+=(Runtime)
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "No Editor/ or Runtime/ directory here; nothing to scan."
+            exit 0
+          fi
+
+          matches=$(grep -RnE 'const[[:space:]]+string[[:space:]]+Version[[:space:]]*=' --include='*.cs' "${dirs[@]}" || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Hardcoded version constants detected. $ERROR_HINT"
+            echo "$matches"
+            exit 1
+          fi
+          echo "No hardcoded version constants found."

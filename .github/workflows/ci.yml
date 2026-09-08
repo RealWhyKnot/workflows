@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: release-notes on ${{ matrix.os }}
+    name: actions on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -28,4 +28,31 @@ jobs:
 
       - name: Test
         shell: pwsh
-        run: ./release-notes/Test-GenerateReleaseNotes.ps1
+        run: |
+          $tests = @(Get-ChildItem -Path . -Filter 'Test-*.ps1' -Recurse |
+            Where-Object { $_.FullName -notmatch '[\/]\.git[\/]' } |
+            Sort-Object FullName)
+          if (-not $tests) { throw 'No Test-*.ps1 found. The suite would pass by finding nothing.' }
+          $failed = @()
+          foreach ($t in $tests) {
+            $rel = Resolve-Path -Relative $t.FullName
+            Write-Host "::group::$rel"
+            & $t.FullName
+            if ($LASTEXITCODE -ne 0) { $failed += $rel }
+            Write-Host '::endgroup::'
+          }
+          Write-Host "Ran $($tests.Count) test script(s)."
+          if ($failed) { throw "Failed: $($failed -join ', ')" }
+
+  lint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Lint workflows
+        uses: raven-actions/actionlint@v2
+        with:
+          shellcheck: true

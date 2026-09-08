@@ -1,0 +1,58 @@
+name: Commit subjects
+description: Reject double-stamped, non-conventional, or upstream-referencing commit subjects in the pushed range.
+
+inputs:
+  range:
+    description: Explicit git range. Resolved from the triggering event when empty.
+    required: false
+    default: ''
+  check-stamp:
+    description: Reject subjects carrying more than one CalVer build stamp.
+    required: false
+    default: 'true'
+  stamp-pattern:
+    description: Regex matching one build stamp. Counted per subject.
+    required: false
+    default: '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}|beta))?\)'
+  check-conventional:
+    description: Require every non-merge subject to be a conventional commit.
+    required: false
+    default: 'false'
+  conventional-pattern:
+    description: Regex a conventional subject must match.
+    required: false
+    default: '^(feat|fix|chore|ci|docs|refactor|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+'
+  forbidden-body-pattern:
+    description: Regex rejected anywhere in a non-merge commit body. Empty skips the check.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Validate commit subjects
+      shell: pwsh
+      env:
+        RANGE: ${{ inputs.range }}
+        BEFORE_SHA: ${{ github.event.before }}
+        AFTER_SHA: ${{ github.event.after }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        CHECK_STAMP: ${{ inputs.check-stamp }}
+        STAMP_PATTERN: ${{ inputs.stamp-pattern }}
+        CHECK_CONVENTIONAL: ${{ inputs.check-conventional }}
+        CONVENTIONAL_PATTERN: ${{ inputs.conventional-pattern }}
+        FORBIDDEN_BODY_PATTERN: ${{ inputs.forbidden-body-pattern }}
+      run: |
+        & '${{ github.action_path }}/Assert-CommitSubjects.ps1' `
+          -Range "$env:RANGE" `
+          -BeforeSha "$env:BEFORE_SHA" `
+          -AfterSha "$env:AFTER_SHA" `
+          -PrBaseSha "$env:PR_BASE_SHA" `
+          -PrHeadSha "$env:PR_HEAD_SHA" `
+          -CheckStamp ([System.Convert]::ToBoolean($env:CHECK_STAMP)) `
+          -StampPattern "$env:STAMP_PATTERN" `
+          -CheckConventional ([System.Convert]::ToBoolean($env:CHECK_CONVENTIONAL)) `
+          -ConventionalPattern "$env:CONVENTIONAL_PATTERN" `
+          -ForbiddenBodyPattern "$env:FORBIDDEN_BODY_PATTERN"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

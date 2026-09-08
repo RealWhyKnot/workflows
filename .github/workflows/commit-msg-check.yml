@@ -1,0 +1,50 @@
+name: Commit message check
+
+on:
+  workflow_call:
+    inputs:
+      check-stamp:
+        description: Reject subjects carrying more than one CalVer build stamp.
+        type: boolean
+        required: false
+        default: true
+      stamp-pattern:
+        description: Regex matching one build stamp. Counted per subject.
+        type: string
+        required: false
+        default: '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}|beta))?\)'
+      check-conventional:
+        description: Require every non-merge subject to be a conventional commit.
+        type: boolean
+        required: false
+        default: false
+      conventional-pattern:
+        description: Regex a conventional subject must match.
+        type: string
+        required: false
+        default: '^(feat|fix|chore|ci|docs|refactor|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+'
+      forbidden-body-pattern:
+        description: Regex rejected anywhere in a non-merge commit body. Empty skips the check.
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  check:
+    name: Validate commit subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit subjects
+        uses: RealWhyKnot/workflows/commit-subjects@v1
+        with:
+          check-stamp: ${{ inputs.check-stamp }}
+          stamp-pattern: ${{ inputs.stamp-pattern }}
+          check-conventional: ${{ inputs.check-conventional }}
+          conventional-pattern: ${{ inputs.conventional-pattern }}
+          forbidden-body-pattern: ${{ inputs.forbidden-body-pattern }}

@@ -1,0 +1,72 @@
+name: Sync wiki
+
+on:
+  workflow_call:
+    inputs:
+      source-dir:
+        description: Directory in the caller repo to mirror into the wiki.
+        type: string
+        required: false
+        default: wiki
+      exclude:
+        description: Newline-separated paths to leave out of the mirror.
+        type: string
+        required: false
+        default: README.md
+
+jobs:
+  sync:
+    name: Mirror into the wiki repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Sync to wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_DIR: ${{ inputs.source-dir }}
+          EXCLUDE: ${{ inputs.exclude }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "$SOURCE_DIR" ]; then
+            echo "::warning::No $SOURCE_DIR directory in this repo; nothing to sync."
+            exit 0
+          fi
+
+          # The wiki repo only exists once someone creates the first page in the
+          # web UI. Before that the clone fails and there is nothing to mirror.
+          if ! git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki_remote 2>clone.err; then
+            if grep -qi "repository not found" clone.err; then
+              echo "::warning::No wiki yet. Create the first page on github.com, then re-run this workflow."
+              cat clone.err
+              exit 0
+            fi
+            echo "::error::Failed to clone the wiki repo"
+            cat clone.err
+            exit 1
+          fi
+
+          rsync_args=(-a --delete --exclude='.git')
+          while IFS= read -r pattern; do
+            [ -n "$pattern" ] || continue
+            rsync_args+=("--exclude=$pattern")
+          done <<< "$EXCLUDE"
+
+          rsync "${rsync_args[@]}" "$SOURCE_DIR"/ wiki_remote/
+
+          if [ -z "$(git -C wiki_remote status --porcelain)" ]; then
+            echo "No wiki changes to sync."
+            exit 0
+          fi
+
+          git -C wiki_remote config user.name "github-actions[bot]"
+          git -C wiki_remote config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C wiki_remote add -A
+          git -C wiki_remote commit -m "Sync wiki from ${SOURCE_DIR}/ @ ${GITHUB_SHA::7}
+
+          Source: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          git -C wiki_remote push origin HEAD
+          echo "Wiki synced."
