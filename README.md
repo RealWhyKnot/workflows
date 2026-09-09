@@ -31,6 +31,9 @@ caller granted, never add to it, so a missing permission shows up as a 403 deep 
 | `wiki-sync.yml` | Mirrors `wiki/` into the repo's GitHub Wiki. Skips quietly until someone creates the first wiki page. | `contents: write` |
 | `version-guard.yml` | Fails if a `const string Version` reappears in `Editor/` or `Runtime/`. | `contents: read` |
 | `dependabot-automerge.yml` | Turns on auto-merge for Dependabot updates of an allowed type. | `contents: write`, `pull-requests: write` |
+| `changelog-append.yml` | Runs your `Update-Changelog.ps1` over the pushed range and commits the result back, signed. | `contents: write` |
+| `nightly-beta.yml` | Tags a beta when main has moved since the last tag. | `contents: write` |
+| `nightly-beta-scripted.yml` | Same, but your own planner script decides the tag. | `contents: write`, `actions: write` |
 
 `commit-msg-check.yml` inputs, all optional:
 
@@ -184,6 +187,66 @@ where a missed changelog commit should not fail the release.
 
 A commit made with `GITHUB_TOKEN` does not trigger workflows, which is what stops the changelog
 commit from re-running the job that made it.
+
+## changelog-append
+
+Calls your repo's `Update-Changelog.ps1 -Mode Append -Range ...`, then commits whatever changed
+through `commit-on-branch`, so the commit is signed and clears a required-signatures rule.
+
+```yaml
+jobs:
+  append:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip changelog]')) }}
+    uses: RealWhyKnot/workflows/.github/workflows/changelog-append.yml@v1
+    with:
+      range: ${{ inputs.range }}
+```
+
+Keep the recursion guard on your own job: a commit made with `GITHUB_TOKEN` does not trigger
+workflows, but a manual re-run or a different actor can still loop. `changelog-paths` takes a
+newline-separated list for repos that also keep `wiki/Changelog.md`, and `trigger-wiki-sync: true`
+kicks the wiki afterwards, since the changelog commit will not fire the wiki's push trigger.
+
+## nightly-beta
+
+Tags `vYYYY.M.D.N-beta` when main has moved since the newest tag, and does nothing when it has not.
+The date comes from `timezone` (default `America/Chicago`), not UTC, so a late-evening commit still
+lands on the right day.
+
+```yaml
+jobs:
+  tag:
+    uses: RealWhyKnot/workflows/.github/workflows/nightly-beta.yml@v1
+  release:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+```
+
+The release job stays in your repo: `./` inside a shared workflow would resolve to this repository,
+not yours. If your `release.yml` only triggers on a tag push, set `dispatch-release: true` instead
+and drop the second job, because a tag pushed with `GITHUB_TOKEN` never fires that trigger.
+
+`nightly-beta-scripted.yml` is the same shape for repos whose own planner decides the tag. It runs
+`.github/scripts/Get-NightlyBetaPlan.ps1` and expects `has_changes` and `next_tag` outputs from it.
+
+## hooks
+
+`commit-msg` rejects a subject carrying more than one build stamp, and `prepare-commit-msg` appends
+the current one. They live here so the pattern matches `commit-msg-check.yml` exactly; a test in
+this repo fails if the two ever drift apart.
+
+```
+pwsh path/to/workflows/hooks/Install-Hooks.ps1 -RepoRoot .
+```
+
+That copies both into `.githooks/` and points `core.hooksPath` at it. It refuses to overwrite a hook
+you have changed unless you pass `-Force`. `pre-push` is deliberately not shared: every repo drives a
+different linter from it.
 
 ## Versioning
 

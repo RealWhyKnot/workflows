@@ -1,0 +1,101 @@
+name: Changelog append
+
+on:
+  workflow_call:
+    inputs:
+      range:
+        description: Commit range to append. Worked out from the push when empty.
+        type: string
+        required: false
+        default: ''
+      changelog-paths:
+        description: Newline-separated changelog files the script maintains.
+        type: string
+        required: false
+        default: CHANGELOG.md
+      script:
+        description: Script that appends the entries, called with -Mode Append -Range.
+        type: string
+        required: false
+        default: ./.github/scripts/Update-Changelog.ps1
+      trigger-wiki-sync:
+        description: Kick wiki-sync afterwards, for repos whose wiki mirrors a changelog.
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  append:
+    name: Append the changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Work out the commit range
+        id: range
+        shell: bash
+        env:
+          DISPATCH_RANGE: ${{ inputs.range }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "push" ]; then
+            range="${DISPATCH_RANGE:-HEAD~1..HEAD}"
+          elif [ -n "${DISPATCH_RANGE:-}" ]; then
+            range="$DISPATCH_RANGE"
+          elif [ -z "${BEFORE_SHA:-}" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            range="HEAD~1..HEAD"
+          elif git merge-base --is-ancestor "$BEFORE_SHA" "$AFTER_SHA" 2>/dev/null; then
+            range="${BEFORE_SHA}..${AFTER_SHA}"
+          else
+            echo "$BEFORE_SHA is not an ancestor of $AFTER_SHA (force push?); using the tip commit."
+            range="HEAD~1..HEAD"
+          fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Appending from $range"
+
+      - name: Append the entries
+        id: append
+        shell: pwsh
+        env:
+          SCRIPT: ${{ inputs.script }}
+          CHANGELOG_PATHS: ${{ inputs.changelog-paths }}
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          $paths = @($env:CHANGELOG_PATHS -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+          & $env:SCRIPT -Mode Append -Range $env:RANGE
+          if ($LASTEXITCODE -ne 0) { throw "$env:SCRIPT failed ($LASTEXITCODE)" }
+
+          $changed = & git status --porcelain @paths
+          if ([string]::IsNullOrWhiteSpace($changed)) {
+            "changed=false" >> $env:GITHUB_OUTPUT
+            Write-Host 'No changelog entries to append.'
+          } else {
+            "changed=true" >> $env:GITHUB_OUTPUT
+            & git --no-pager diff --stat @paths
+          }
+
+      - name: Commit the changelog
+        if: steps.append.outputs.changed == 'true'
+        uses: RealWhyKnot/workflows/commit-on-branch@v1
+        with:
+          headline: 'docs(changelog): append entries from ${{ github.sha }} [skip changelog]'
+          body: Maintained by the shared changelog-append workflow.
+          branch: ${{ github.ref_name }}
+          paths: ${{ inputs.changelog-paths }}
+
+      - name: Trigger the wiki sync
+        if: steps.append.outputs.changed == 'true' && inputs.trigger-wiki-sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run wiki-sync.yml --ref "${{ github.ref_name }}" ||
+            echo "::warning::Could not trigger wiki-sync; the next wiki push will pick it up."

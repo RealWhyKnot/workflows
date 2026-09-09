@@ -1,0 +1,41 @@
+name: Nightly tag plan
+description: Decide whether main moved since the last tag, and what the next same-day nightly tag should be.
+
+inputs:
+  timezone:
+    description: Timezone whose calendar date the tag uses.
+    required: false
+    default: America/Chicago
+  suffix:
+    description: Prerelease suffix appended after the revision. Empty gives a plain tag.
+    required: false
+    default: beta
+  tag-glob:
+    description: Glob for finding the most recent tag.
+    required: false
+    default: 'v*'
+
+outputs:
+  has_changes:
+    description: true when main has moved since the newest tag.
+    value: ${{ steps.plan.outputs.has_changes }}
+  next_tag:
+    description: The tag to create, empty when there is nothing to do.
+    value: ${{ steps.plan.outputs.next_tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Plan the nightly tag
+      id: plan
+      shell: pwsh
+      env:
+        TIMEZONE: ${{ inputs.timezone }}
+        SUFFIX: ${{ inputs.suffix }}
+        TAG_GLOB: ${{ inputs.tag-glob }}
+      run: |
+        & '${{ github.action_path }}/Get-NightlyTagPlan.ps1' `
+          -Timezone "$env:TIMEZONE" `
+          -Suffix "$env:SUFFIX" `
+          -TagGlob "$env:TAG_GLOB"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

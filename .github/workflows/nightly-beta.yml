@@ -1,0 +1,87 @@
+name: Nightly beta
+
+on:
+  workflow_call:
+    inputs:
+      timezone:
+        description: Timezone whose calendar date the tag uses.
+        type: string
+        required: false
+        default: America/Chicago
+      suffix:
+        description: Prerelease suffix for the nightly tag.
+        type: string
+        required: false
+        default: beta
+      assert-sequence:
+        description: Check the tag is the next same-day revision before pushing it.
+        type: boolean
+        required: false
+        default: true
+      prerelease-suffix:
+        description: Suffix regex the sequence check counts same-day tags with.
+        type: string
+        required: false
+        default: '[A-Za-z0-9]{4}'
+      dispatch-release:
+        description: Kick release.yml with the new tag, for repos whose release runs on tag push.
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      tag:
+        description: The tag that was pushed, empty when nothing changed.
+        value: ${{ jobs.tag.outputs.tag }}
+
+jobs:
+  tag:
+    name: Tag a beta when main moved
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.plan.outputs.next_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Plan the nightly tag
+        id: plan
+        uses: RealWhyKnot/workflows/nightly-plan@v1
+        with:
+          timezone: ${{ inputs.timezone }}
+          suffix: ${{ inputs.suffix }}
+
+      - name: Check the version sequence
+        if: steps.plan.outputs.has_changes == 'true' && inputs.assert-sequence
+        uses: RealWhyKnot/workflows/version-sequence@v1
+        with:
+          tag: ${{ steps.plan.outputs.next_tag }}
+          prerelease-suffix: ${{ inputs.prerelease-suffix }}
+
+      - name: Push the tag
+        if: steps.plan.outputs.has_changes == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.next_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' tag -a $env:TAG -m $env:TAG
+          if ($LASTEXITCODE -ne 0) { throw "git tag failed ($LASTEXITCODE)" }
+          git push "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:REPO).git" $env:TAG
+          if ($LASTEXITCODE -ne 0) { throw "git push failed ($LASTEXITCODE)" }
+          Write-Host "Pushed $env:TAG"
+
+      - name: Dispatch the release
+        if: steps.plan.outputs.has_changes == 'true' && inputs.dispatch-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.next_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh workflow run release.yml --repo $env:REPO --ref main --field "tag=$env:TAG"
+          if ($LASTEXITCODE -ne 0) { throw "Could not dispatch release.yml for $env:TAG" }

@@ -1,0 +1,112 @@
+name: Nightly beta (scripted)
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: Runner label. These planners are Windows-first.
+        type: string
+        required: false
+        default: windows-latest
+      planner:
+        description: Script that decides the next tag. Must set has_changes and next_tag outputs.
+        type: string
+        required: false
+        default: ./.github/scripts/Get-NightlyBetaPlan.ps1
+      validate-scripts:
+        description: Newline-separated self-test scripts to run before planning.
+        type: string
+        required: false
+        default: ''
+      no-changes-message:
+        description: What to print when the planner finds nothing to release.
+        type: string
+        required: false
+        default: No app changes since the latest release tag.
+      dispatch-release:
+        description: Kick release.yml with the new tag. Needed when release.yml runs on tag push.
+        type: boolean
+        required: false
+        default: true
+      timeout-minutes:
+        description: Job timeout.
+        type: number
+        required: false
+        default: 15
+    outputs:
+      tag:
+        description: The tag that was pushed, empty when nothing changed.
+        value: ${{ jobs.tag.outputs.tag }}
+
+jobs:
+  tag:
+    name: Tag a beta when the release inputs changed
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    outputs:
+      tag: ${{ steps.plan.outputs.next_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate the planner
+        if: inputs.validate-scripts != ''
+        shell: pwsh
+        env:
+          VALIDATE_SCRIPTS: ${{ inputs.validate-scripts }}
+        run: |
+          foreach ($script in @($env:VALIDATE_SCRIPTS -split "`r?`n" | Where-Object { $_.Trim() })) {
+            Write-Host "::group::$($script.Trim())"
+            & $script.Trim()
+            if ($LASTEXITCODE -ne 0) { throw "$script failed ($LASTEXITCODE)" }
+            Write-Host '::endgroup::'
+          }
+
+      - name: Plan the nightly beta
+        id: plan
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLANNER: ${{ inputs.planner }}
+        run: |
+          git fetch --tags --force
+          & $env:PLANNER
+          if ($LASTEXITCODE -ne 0) { throw "$env:PLANNER failed ($LASTEXITCODE)" }
+
+      - name: Report no changes
+        if: steps.plan.outputs.has_changes != 'true'
+        shell: pwsh
+        env:
+          MESSAGE: ${{ inputs.no-changes-message }}
+        run: Write-Host $env:MESSAGE
+
+      - name: Push the tag
+        if: steps.plan.outputs.has_changes == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.next_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAG)) { throw 'The planner reported changes but returned no tag.' }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a $env:TAG -m "$($env:REPO.Split('/')[-1]) nightly beta $env:TAG"
+          if ($LASTEXITCODE -ne 0) { throw "Could not create $env:TAG" }
+          git push "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:REPO).git" "refs/tags/$env:TAG"
+          if ($LASTEXITCODE -ne 0) { throw "Could not push $env:TAG" }
+          Write-Host "Pushed $env:TAG"
+
+      - name: Dispatch the release
+        if: steps.plan.outputs.has_changes == 'true' && inputs.dispatch-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.next_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh workflow run release.yml --repo $env:REPO --ref main --field "tag=$env:TAG"
+          if ($LASTEXITCODE -ne 0) { throw "Could not dispatch release.yml for $env:TAG" }
