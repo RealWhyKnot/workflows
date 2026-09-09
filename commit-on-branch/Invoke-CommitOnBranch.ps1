@@ -42,18 +42,19 @@ function Fail {
 }
 
 if ($SkipIfUnchanged -and -not $DryRun) {
+    # Compare against the branch through the API rather than origin/<branch>: a tag-triggered
+    # checkout often has no local ref for the branch being committed to.
     $changed = $false
     foreach ($f in $files) {
-        $remote = & git show "origin/$Branch`:$f" 2>$null
-        if ($LASTEXITCODE -ne 0) { $changed = $true; $global:LASTEXITCODE = 0; break }
+        $remotePath = $f.Replace([char]92, [char]47)
+        $encoded = & gh api "repos/$Repository/contents/$remotePath`?ref=$Branch" --jq '.content' 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encoded)) { $changed = $true; $global:LASTEXITCODE = 0; break }
         $global:LASTEXITCODE = 0
-        $remoteBytes = [System.Text.Encoding]::UTF8.GetBytes(($remote -join "`n"))
+        $remoteBytes = [Convert]::FromBase64String((($encoded -join '') -replace '\s', ''))
         $localBytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $f).Path)
-        $normalisedLocal = ([System.Text.Encoding]::UTF8.GetString($localBytes) -replace "`r`n", "`n").TrimEnd("`n")
-        $normalisedRemote = ([System.Text.Encoding]::UTF8.GetString($remoteBytes) -replace "`r`n", "`n").TrimEnd("`n")
-        if ($normalisedLocal -ne $normalisedRemote) { $changed = $true; break }
+        if ([Convert]::ToBase64String($remoteBytes) -ne [Convert]::ToBase64String($localBytes)) { $changed = $true; break }
     }
-    if (-not $changed) { Write-Host "No change against origin/$Branch; nothing to commit."; exit 0 }
+    if (-not $changed) { Write-Host "Every file already matches $Branch; nothing to commit."; exit 0 }
 }
 
 $expectedOid = ''
