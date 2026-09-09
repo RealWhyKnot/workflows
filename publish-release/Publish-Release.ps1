@@ -22,7 +22,16 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 if (-not $Title) { $Title = $Tag }
-$assetList = @($Assets | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
+$assetList = @()
+foreach ($entry in @($Assets | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })) {
+    if ($entry -match '[*?]') {
+        # A glob that matches nothing contributes nothing, which is what the hand-rolled
+        # Get-ChildItem calls this replaces did.
+        $assetList += @(Get-ChildItem -Path $entry -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    } else {
+        $assetList += $entry
+    }
+}
 
 function Invoke-Gh {
     param([string[]] $Arguments)

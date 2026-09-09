@@ -33,6 +33,12 @@ function Assert-Plan {
 
 $base = @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
 
+$script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("publish-release-" + [System.Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $script:sandbox 'dist') -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $script:sandbox 'dist/one.whl') -Value 'x'
+Set-Content -LiteralPath (Join-Path $script:sandbox 'dist/two.tar.gz') -Value 'y'
+Push-Location $script:sandbox
+
 Assert-Plan 'a plain release names the tag and notes file' $base `
     @('gh release create v2026.9.8.0', '--title v2026.9.8.0', '--notes-file notes.md') `
     @('--draft', '--prerelease', '--repo', '--target')
@@ -73,6 +79,18 @@ Assert-Plan 'digest verification is skipped without a hash' ($base + @{ VerifyAs
 
 Assert-Plan 'the draft view passes the repository through' ($base + @{ DraftFirst = $true; Repository = 'o/r' }) `
     @('gh release view v2026.9.8.0 --json assets,isDraft --repo o/r')
+
+Assert-Plan 'a glob expands to the matching files' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/*') } `
+    @('one.whl', 'two.tar.gz')
+
+Assert-Plan 'a glob matching nothing contributes no assets' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/nope/*') } `
+    @('gh release create v2026.9.8.0 --title')
+
+Assert-Plan 'literal paths are not globbed' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/one.whl') } `
+    @('create v2026.9.8.0 dist/one.whl --title')
+
+Pop-Location
+Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }
 Write-Host "`nAll checks passed."

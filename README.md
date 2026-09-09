@@ -145,6 +145,9 @@ Creates the release, uploads the assets, and optionally checks the upload landed
       dist/app.zip.sha256
 ```
 
+An asset entry containing `*` or `?` is expanded, so `dist/python/*` works and a glob that matches
+nothing simply contributes no assets.
+
 `prerelease: true` adds `--prerelease --latest=false`. `draft-first: true` creates a draft, confirms
 every asset actually attached, and only then promotes it, which is what you want when a failed upload
 would otherwise publish an empty release. `delete-existing: true` replaces an existing release for
