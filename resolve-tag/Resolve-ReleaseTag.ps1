@@ -27,7 +27,7 @@ if ($resolved -notmatch $TagPattern) {
 
 $sha = ''
 if ($RequireTagExists) {
-    $sha = (& git rev-list -n 1 $resolved 2>$null | Select-Object -First 1)
+    $sha = (& git rev-list -n 1 $resolved 2>$null)
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sha)) {
         Write-Host "::error::Tag '$resolved' does not exist in the checked-out repository."
         exit 1

@@ -78,6 +78,15 @@ try {
     Assert-Fails 'a well-formed tag that does not exist is rejected' @{ Tag = 'v2026.9.9.0' }
     Assert-Outputs 'the missing tag is allowed when existence is not required' @{ Tag = 'v2026.9.9.0'; RequireTagExists = $false } @{ tag='v2026.9.9.0'; sha='' }
     Assert-Fails 'a suffix outside the tag pattern is rejected' @{ Tag = 'v2026.9.8.3-rc.1' }
+    $fresh = & pwsh -NoProfile -Command "& '$script:checker' -Tag 'v2026.9.8.0' -OutputPath '$script:outFile'" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "FAIL  a fresh session with no prior native command resolves -- exit $LASTEXITCODE : $fresh"
+        $script:failures++
+    }
+    else {
+        Write-Host 'ok    a fresh session with no prior native command resolves'
+    }
+
     Assert-Outputs 'a widened tag pattern accepts it' @{ Tag = 'v2026.9.8.3-rc.1'; TagPattern = '^v\d{4}\.\d+\.\d+\.\d+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$'; RequireTagExists = $false } @{ tag='v2026.9.8.3-rc.1' }
 }
 finally {
