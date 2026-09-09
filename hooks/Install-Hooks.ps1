@@ -7,6 +7,8 @@ param(
     [switch] $CheckConventional,
     [string] $ConventionalPattern = '',
     [string] $ForbiddenBodyPattern = '',
+    [string] $VersionFile = '',
+    [switch] $VersionInGitDir,
     [switch] $Force
 )
 
@@ -41,6 +43,8 @@ if ($StampPattern) { $lines += "STAMP_PATTERN='$StampPattern'" }
 if ($CheckConventional) { $lines += 'CHECK_CONVENTIONAL=1' }
 if ($ConventionalPattern) { $lines += "CONVENTIONAL_PATTERN='$ConventionalPattern'" }
 if ($ForbiddenBodyPattern) { $lines += "FORBIDDEN_BODY_PATTERN='$ForbiddenBodyPattern'" }
+if ($VersionFile) { $lines += "VERSION_FILE='$VersionFile'" }
+if ($VersionInGitDir) { $lines += 'VERSION_IN_GITDIR=1' }
 
 $configPath = Join-Path $target 'hook-config'
 if ($lines) {

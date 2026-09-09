@@ -256,6 +256,8 @@ settings you gave `commit-msg-check.yml`:
 | `-NoStamp` | Skip stamping entirely, and do not install `prepare-commit-msg`. |
 | `-CheckConventional` | Also require conventional subjects. |
 | `-ForbiddenBodyPattern` | Reject a message matching this, for keeping upstream issue numbers out of a fork. |
+| `-VersionFile` | Name of the file holding the build stamp. Defaults to `version.txt`. |
+| `-VersionInGitDir` | Keep that file inside `.git`, so stamping never dirties the worktree. |
 
 Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body checks.
 

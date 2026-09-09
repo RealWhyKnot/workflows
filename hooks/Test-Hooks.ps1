@@ -67,6 +67,36 @@ if ($bash) {
         Assert 'CHECK_STAMP=0 ignores two stamps' ((Invoke-Hook 'fix: it (2026.9.8.1-A1B2) (2026.9.8.2-C3D4)' 'CHECK_STAMP=0') -eq 0)
         Assert 'FORBIDDEN_BODY_PATTERN rejects an issue reference' ((Invoke-Hook 'docs: tidy #412' "FORBIDDEN_BODY_PATTERN='#[0-9]+'") -ne 0)
         Assert 'a narrowed STAMP_PATTERN ignores a beta stamp' ((Invoke-Hook 'fix: it (2026.9.8.1-beta) (2026.9.8.2-beta)' "STAMP_PATTERN='\(2026\.[0-9]+\.[0-9]+\.[0-9]+-[A-F0-9]{4}\)'") -eq 0)
+        # prepare-commit-msg writes the stamp somewhere; VERSION_IN_GITDIR keeps it out of the worktree.
+        $repo = Join-Path $sandbox 'repo'
+        New-Item -ItemType Directory -Path $repo -Force | Out-Null
+        Push-Location $repo
+        try {
+            & git init --initial-branch=main --quiet 2>&1 | Out-Null
+            & git config user.name 'Test' | Out-Null
+            & git config user.email 'test@example.com' | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $repo '.githooks') -Force | Out-Null
+            Copy-Item (Join-Path $hooksDir 'prepare-commit-msg') (Join-Path $repo '.githooks/prepare-commit-msg') -Force
+
+            $today = Get-Date -Format 'yyyy.M.d'
+            $stamp = "$today.42-ABCD"
+
+            $gitPath = (& git rev-parse --git-path 'app-version.txt').Trim()
+            $private = if ([System.IO.Path]::IsPathRooted($gitPath)) { $gitPath } else { Join-Path $repo $gitPath }
+            New-Item -ItemType Directory -Path (Split-Path -Parent $private) -Force | Out-Null
+            [System.IO.File]::WriteAllText($private, $stamp)
+            [System.IO.File]::WriteAllText((Join-Path $repo '.githooks/hook-config'), "VERSION_FILE='app-version.txt'`nVERSION_IN_GITDIR=1`n")
+
+            $msg = Join-Path $repo 'msg.txt'
+            [System.IO.File]::WriteAllText($msg, "docs: sample`n")
+            & bash '.githooks/prepare-commit-msg' $msg 2>&1 | Out-Null
+            $subject = ([System.IO.File]::ReadAllText($msg) -split "`n")[0].Trim()
+
+            Assert 'the git-dir version file supplies the stamp' ($subject -eq "docs: sample ($stamp)") "got '$subject'"
+            Assert 'no root version.txt is created' (-not (Test-Path (Join-Path $repo 'version.txt')))
+            Assert 'the private version file survives' (Test-Path $private)
+        }
+        finally { Pop-Location }
     }
     finally { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 } else {
