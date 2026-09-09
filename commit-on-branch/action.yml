@@ -1,0 +1,64 @@
+name: Commit on branch
+description: Commit files to a branch through the GraphQL createCommitOnBranch mutation, so the commit is signed server-side.
+
+inputs:
+  paths:
+    description: Newline-separated files to commit, relative to the workspace.
+    required: true
+  headline:
+    description: Commit subject.
+    required: true
+  body:
+    description: Commit body. Omitted when empty.
+    required: false
+    default: ''
+  branch:
+    description: Branch to commit onto.
+    required: false
+    default: main
+  repository:
+    description: owner/name to commit to. Defaults to the calling repository.
+    required: false
+    default: ''
+  skip-if-unchanged:
+    description: Do nothing when the files already match the branch tip.
+    required: false
+    default: 'true'
+  verify-signature:
+    description: Fail unless GitHub reports the new commit as verified.
+    required: false
+    default: 'true'
+  warn-on-failure:
+    description: Warn and succeed instead of failing the job.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Commit on branch
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PATHS: ${{ inputs.paths }}
+        HEADLINE: ${{ inputs.headline }}
+        BODY: ${{ inputs.body }}
+        BRANCH: ${{ inputs.branch }}
+        REPOSITORY: ${{ inputs.repository }}
+        SKIP_IF_UNCHANGED: ${{ inputs.skip-if-unchanged }}
+        VERIFY_SIGNATURE: ${{ inputs.verify-signature }}
+        WARN_ON_FAILURE: ${{ inputs.warn-on-failure }}
+      run: |
+        $paths = @()
+        if ($env:PATHS) { $paths = @($env:PATHS -split "`r?`n" | Where-Object { $_.Trim() }) }
+        $repo = if ($env:REPOSITORY) { $env:REPOSITORY } else { '${{ github.repository }}' }
+        & '${{ github.action_path }}/Invoke-CommitOnBranch.ps1' `
+          -Paths $paths `
+          -Headline "$env:HEADLINE" `
+          -Body "$env:BODY" `
+          -Branch "$env:BRANCH" `
+          -Repository $repo `
+          -SkipIfUnchanged ([System.Convert]::ToBoolean($env:SKIP_IF_UNCHANGED)) `
+          -VerifySignature ([System.Convert]::ToBoolean($env:VERIFY_SIGNATURE)) `
+          -WarnOnFailure ([System.Convert]::ToBoolean($env:WARN_ON_FAILURE))
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

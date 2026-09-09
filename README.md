@@ -105,6 +105,83 @@ checkout with `fetch-depth: 0`.
     check-conventional: true
 ```
 
+## resolve-tag
+
+Validates the tag being released and tells you what it is.
+
+```yaml
+- id: tag
+  uses: RealWhyKnot/workflows/resolve-tag@v1
+  with:
+    tag: ${{ inputs.tag }}
+```
+
+With no `tag` it falls back to the ref that triggered the run, so the same step covers a tag push and
+a manual re-release. Outputs `tag`, `version` (the tag without its `v`), `prerelease`, `channel`
+(`beta` or `release`) and `sha`, the commit the tag points at.
+
+| input | default | meaning |
+| --- | --- | --- |
+| `tag` | the triggering ref | Tag to release. |
+| `tag-pattern` | `^v\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}\|beta))?$` | What a valid tag looks like. |
+| `prerelease-pattern` | `-beta` only | Which tags count as prereleases. Widen it if every suffix should. |
+| `require-tag-exists` | `true` | Fail unless the tag resolves to a commit in the checkout. |
+
+The two patterns are separate on purpose: a `-A1B2` tag is valid but is not a beta, and I have repos
+that want it either way.
+
+## publish-release
+
+Creates the release, uploads the assets, and optionally checks the upload landed.
+
+```yaml
+- uses: RealWhyKnot/workflows/publish-release@v1
+  with:
+    tag: ${{ steps.tag.outputs.tag }}
+    notes-file: ${{ steps.notes.outputs.file }}
+    prerelease: ${{ steps.tag.outputs.prerelease }}
+    assets: |
+      dist/app.zip
+      dist/app.zip.sha256
+```
+
+`prerelease: true` adds `--prerelease --latest=false`. `draft-first: true` creates a draft, confirms
+every asset actually attached, and only then promotes it, which is what you want when a failed upload
+would otherwise publish an empty release. `delete-existing: true` replaces an existing release for
+the tag. Give it `verify-asset` and `verify-sha256` together and it polls the API until the uploaded
+digest matches, because an upload can report success before the asset is readable.
+
+Cleaning up a half-made release stays in your workflow, since it needs to run on failure:
+
+```yaml
+- name: Remove a partial release
+  if: failure()
+  run: gh release delete ${{ steps.tag.outputs.tag }} --yes 2>$null; $global:LASTEXITCODE = 0
+  shell: pwsh
+```
+
+## commit-on-branch
+
+Commits files back to a branch through the GraphQL `createCommitOnBranch` mutation instead of
+`git push`. GitHub signs those commits server-side, so they satisfy a "commits must have verified
+signatures" rule, which a plain push from Actions does not.
+
+```yaml
+- uses: RealWhyKnot/workflows/commit-on-branch@v1
+  with:
+    headline: 'docs(changelog): promote Unreleased to ${{ steps.tag.outputs.tag }} [skip changelog]'
+    paths: |
+      CHANGELOG.md
+```
+
+It reads the branch head itself and sends it as `expectedHeadOid`, so a racing commit fails the
+mutation rather than silently clobbering. By default it does nothing when the files already match the
+branch, and fails if GitHub does not report the new commit as verified. Set `warn-on-failure: true`
+where a missed changelog commit should not fail the release.
+
+A commit made with `GITHUB_TOKEN` does not trigger workflows, which is what stops the changelog
+commit from re-running the job that made it.
+
 ## Versioning
 
 Pin to `@v1`. That tag moves as fixes land, so every repo picks them up without a bump. Pin to a full

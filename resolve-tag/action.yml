@@ -1,0 +1,58 @@
+name: Resolve release tag
+description: Validate the tag being released and report its version, prerelease state, channel and commit.
+
+inputs:
+  tag:
+    description: Tag to release. Falls back to the ref that triggered the run when empty.
+    required: false
+    default: ''
+  tag-pattern:
+    description: Regex every valid tag must match.
+    required: false
+    default: '^v\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}|beta))?$'
+  prerelease-pattern:
+    description: Regex marking a tag as a prerelease. Defaults to -beta only.
+    required: false
+    default: '^v\d{4}\.\d+\.\d+\.\d+-beta$'
+  require-tag-exists:
+    description: Fail unless the tag resolves to a commit in the checkout.
+    required: false
+    default: 'true'
+
+outputs:
+  tag:
+    description: The resolved tag.
+    value: ${{ steps.resolve.outputs.tag }}
+  version:
+    description: The tag without its leading v.
+    value: ${{ steps.resolve.outputs.version }}
+  prerelease:
+    description: true when the tag matches prerelease-pattern.
+    value: ${{ steps.resolve.outputs.prerelease }}
+  channel:
+    description: beta for a prerelease, otherwise release.
+    value: ${{ steps.resolve.outputs.channel }}
+  sha:
+    description: Commit the tag points at, empty when existence was not required.
+    value: ${{ steps.resolve.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve release tag
+      id: resolve
+      shell: pwsh
+      env:
+        TAG: ${{ inputs.tag }}
+        FALLBACK_TAG: ${{ github.ref_name }}
+        TAG_PATTERN: ${{ inputs.tag-pattern }}
+        PRERELEASE_PATTERN: ${{ inputs.prerelease-pattern }}
+        REQUIRE_TAG_EXISTS: ${{ inputs.require-tag-exists }}
+      run: |
+        & '${{ github.action_path }}/Resolve-ReleaseTag.ps1' `
+          -Tag "$env:TAG" `
+          -FallbackTag "$env:FALLBACK_TAG" `
+          -TagPattern "$env:TAG_PATTERN" `
+          -PrereleasePattern "$env:PRERELEASE_PATTERN" `
+          -RequireTagExists ([System.Convert]::ToBoolean($env:REQUIRE_TAG_EXISTS))
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

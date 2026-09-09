@@ -1,0 +1,82 @@
+name: Publish release
+description: Create a GitHub release with its assets, optionally draft-first, replacing an existing one, and verifying an uploaded digest.
+
+inputs:
+  tag:
+    description: Tag to publish.
+    required: true
+  title:
+    description: Release title. Defaults to the tag.
+    required: false
+    default: ''
+  notes-file:
+    description: Path to the markdown notes file.
+    required: false
+    default: ''
+  assets:
+    description: Newline-separated asset paths.
+    required: false
+    default: ''
+  repository:
+    description: owner/name to publish to. Defaults to the calling repository's context.
+    required: false
+    default: ''
+  target:
+    description: Commit-ish to attach the release to.
+    required: false
+    default: ''
+  prerelease:
+    description: Publish as a prerelease and do not mark it latest.
+    required: false
+    default: 'false'
+  draft-first:
+    description: Create as a draft, confirm every asset attached, then promote it.
+    required: false
+    default: 'false'
+  delete-existing:
+    description: Delete an existing release for the tag before creating it.
+    required: false
+    default: 'false'
+  verify-asset:
+    description: Asset filename whose digest should be confirmed after upload.
+    required: false
+    default: ''
+  verify-sha256:
+    description: Expected sha256 of verify-asset. Both are needed for the check to run.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Publish the release
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+        TITLE: ${{ inputs.title }}
+        NOTES_FILE: ${{ inputs.notes-file }}
+        ASSETS: ${{ inputs.assets }}
+        REPOSITORY: ${{ inputs.repository }}
+        TARGET: ${{ inputs.target }}
+        PRERELEASE: ${{ inputs.prerelease }}
+        DRAFT_FIRST: ${{ inputs.draft-first }}
+        DELETE_EXISTING: ${{ inputs.delete-existing }}
+        VERIFY_ASSET: ${{ inputs.verify-asset }}
+        VERIFY_SHA256: ${{ inputs.verify-sha256 }}
+      run: |
+        $assets = @()
+        if ($env:ASSETS) { $assets = @($env:ASSETS -split "`r?`n" | Where-Object { $_.Trim() }) }
+        & '${{ github.action_path }}/Publish-Release.ps1' `
+          -Tag "$env:TAG" `
+          -Title "$env:TITLE" `
+          -NotesFile "$env:NOTES_FILE" `
+          -Assets $assets `
+          -Repository "$env:REPOSITORY" `
+          -Target "$env:TARGET" `
+          -Prerelease ([System.Convert]::ToBoolean($env:PRERELEASE)) `
+          -DraftFirst ([System.Convert]::ToBoolean($env:DRAFT_FIRST)) `
+          -DeleteExisting ([System.Convert]::ToBoolean($env:DELETE_EXISTING)) `
+          -VerifyAsset "$env:VERIFY_ASSET" `
+          -VerifySha256 "$env:VERIFY_SHA256"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
