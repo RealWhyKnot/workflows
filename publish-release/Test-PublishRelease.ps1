@@ -64,8 +64,33 @@ Assert-Plan 'draft-first creates a draft then promotes it' ($base + @{ DraftFirs
 Assert-Plan 'draft-first and prerelease combine' ($base + @{ DraftFirst = $true; Prerelease = $true }) `
     @('--draft', '--prerelease', '--latest=false')
 
-Assert-Plan 'a plain release never views or edits' $base `
-    @() @('gh release view', 'gh release edit')
+Assert-Plan 'a plain release looks the tag up before creating it' $base `
+    @('gh release view v2026.9.8.0 --json id', 'gh release create v2026.9.8.0') `
+    @('gh release edit', 'gh release upload')
+
+Assert-Plan 'an existing release is edited, not created' ($base + @{ AssumeExisting = $true }) `
+    @('gh release edit v2026.9.8.0 --title v2026.9.8.0 --notes-file notes.md') `
+    @('gh release create', '--draft')
+
+Assert-Plan 'an existing release re-uploads assets over the old ones' `
+    ($base + @{ AssumeExisting = $true; Assets = @('a.zip', 'b.tsv') }) `
+    @('gh release upload v2026.9.8.0 a.zip b.tsv --clobber')
+
+Assert-Plan 'an existing release with no assets skips the upload' ($base + @{ AssumeExisting = $true }) `
+    @() @('gh release upload')
+
+Assert-Plan 'an existing prerelease keeps both prerelease flags on edit' `
+    ($base + @{ AssumeExisting = $true; Prerelease = $true }) `
+    @('gh release edit v2026.9.8.0', '--prerelease', '--latest=false')
+
+Assert-Plan 'an existing release passes the repository to edit and upload' `
+    ($base + @{ AssumeExisting = $true; Repository = 'o/r'; Assets = @('a.zip') }) `
+    @('gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r')
+
+Assert-Plan 'delete-existing still creates rather than edits' `
+    ($base + @{ AssumeExisting = $true; DeleteExisting = $true }) `
+    @('gh release delete v2026.9.8.0 --yes', 'gh release create v2026.9.8.0') `
+    @('gh release edit')
 
 Assert-Plan 'delete-existing checks for a release first' ($base + @{ DeleteExisting = $true }) `
     @('gh release view v2026.9.8.0 --json id')
