@@ -78,6 +78,7 @@ try {
     Assert-Pass 'merge subject skips the conventional check' @{ Range = "$withIssue..$merge"; CheckConventional = $true }
 
     Assert-Pass 'push-range shas resolve' @{ BeforeSha = $base; AfterSha = $clean }
+    Assert-Pass 'no shas at all falls back to the tip commit, as on workflow_dispatch' @{}
     Assert-Pass 'first-push zero sha falls back to one commit' @{ BeforeSha = '0000000000000000000000000000000000000000'; AfterSha = $clean }
     Assert-Fail 'pr shas resolve and still catch a bad subject' @{ PrBaseSha = $clean; PrHeadSha = $double } 'build-version stamps'
 

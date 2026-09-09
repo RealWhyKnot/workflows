@@ -19,7 +19,8 @@ Set-StrictMode -Version Latest
 function Resolve-Range {
     if ($Range) { return $Range }
     if ($PrBaseSha -and $PrHeadSha) { return "$PrBaseSha..$PrHeadSha" }
-    if (-not $AfterSha) { throw 'Need either -Range, both -PrBaseSha and -PrHeadSha, or -AfterSha.' }
+    # workflow_dispatch and schedule carry no push shas, so check the tip commit.
+    if (-not $AfterSha) { return 'HEAD~1..HEAD' }
     if (-not $BeforeSha -or $BeforeSha -match '^0+$') { return "$AfterSha~1..$AfterSha" }
     return "$BeforeSha..$AfterSha"
 }
