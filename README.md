@@ -241,12 +241,25 @@ the current one. They live here so the pattern matches `commit-msg-check.yml` ex
 this repo fails if the two ever drift apart.
 
 ```
-pwsh path/to/workflows/hooks/Install-Hooks.ps1 -RepoRoot .
+pwsh path/to/workflows/hooks/Install-Hooks.ps1 -RepoRoot . -Force
 ```
 
-That copies both into `.githooks/` and points `core.hooksPath` at it. It refuses to overwrite a hook
-you have changed unless you pass `-Force`. `pre-push` is deliberately not shared: every repo drives a
-different linter from it.
+That copies both into `.githooks/`, writes a `hook-config` for anything non-default, and points
+`core.hooksPath` at it. Without `-Force` it leaves a hook you have edited alone.
+
+The hook files are identical everywhere; per-repo behaviour lives in `hook-config`, so pass the same
+settings you gave `commit-msg-check.yml`:
+
+| flag | effect |
+| --- | --- |
+| `-StampPattern` | Narrow what counts as a build stamp. |
+| `-NoStamp` | Skip stamping entirely, and do not install `prepare-commit-msg`. |
+| `-CheckConventional` | Also require conventional subjects. |
+| `-ForbiddenBodyPattern` | Reject a message matching this, for keeping upstream issue numbers out of a fork. |
+
+Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body checks.
+
+`pre-push` is deliberately not shared: every repo drives a different linter from it.
 
 ## Versioning
 
