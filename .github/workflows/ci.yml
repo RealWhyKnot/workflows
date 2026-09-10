@@ -37,6 +37,7 @@ jobs:
           foreach ($t in $tests) {
             $rel = Resolve-Path -Relative $t.FullName
             Write-Host "::group::$rel"
+            $global:LASTEXITCODE = 0
             & $t.FullName
             if ($LASTEXITCODE -ne 0) { $failed += $rel }
             Write-Host '::endgroup::'

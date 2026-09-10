@@ -60,6 +60,7 @@ jobs:
         run: |
           foreach ($script in @($env:VALIDATE_SCRIPTS -split "`r?`n" | Where-Object { $_.Trim() })) {
             Write-Host "::group::$($script.Trim())"
+            $global:LASTEXITCODE = 0
             & $script.Trim()
             if ($LASTEXITCODE -ne 0) { throw "$script failed ($LASTEXITCODE)" }
             Write-Host '::endgroup::'
@@ -73,6 +74,7 @@ jobs:
           PLANNER: ${{ inputs.planner }}
         run: |
           git fetch --tags --force
+          $global:LASTEXITCODE = 0
           & $env:PLANNER
           if ($LASTEXITCODE -ne 0) { throw "$env:PLANNER failed ($LASTEXITCODE)" }
 
