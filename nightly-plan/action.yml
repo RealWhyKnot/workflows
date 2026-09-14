@@ -1,5 +1,5 @@
 name: Nightly tag plan
-description: Decide whether main moved since the last tag, and what the next same-day nightly tag should be.
+description: Decide whether main has functional changes since the last tag, and what the next same-day nightly tag should be.
 
 inputs:
   timezone:
@@ -11,13 +11,21 @@ inputs:
     required: false
     default: beta
   tag-glob:
-    description: Glob for finding the most recent tag.
+    description: Glob for finding the nearest tag.
     required: false
     default: 'v*'
+  ignore-paths:
+    description: Newline-separated path globs that never change the program, added to the beta gate defaults.
+    required: false
+    default: ''
+  release-types:
+    description: Conventional commit types that ship. Empty uses the beta gate defaults.
+    required: false
+    default: ''
 
 outputs:
   has_changes:
-    description: true when main has moved since the newest tag.
+    description: true when a commit since the nearest tag passes the beta gate.
     value: ${{ steps.plan.outputs.has_changes }}
   next_tag:
     description: The tag to create, empty when there is nothing to do.
@@ -33,9 +41,14 @@ runs:
         TIMEZONE: ${{ inputs.timezone }}
         SUFFIX: ${{ inputs.suffix }}
         TAG_GLOB: ${{ inputs.tag-glob }}
+        IGNORE_PATHS: ${{ inputs.ignore-paths }}
+        RELEASE_TYPES: ${{ inputs.release-types }}
       run: |
+        $global:LASTEXITCODE = 0
         & '${{ github.action_path }}/Get-NightlyTagPlan.ps1' `
           -Timezone "$env:TIMEZONE" `
           -Suffix "$env:SUFFIX" `
-          -TagGlob "$env:TAG_GLOB"
+          -TagGlob "$env:TAG_GLOB" `
+          -IgnorePaths "$env:IGNORE_PATHS" `
+          -ReleaseTypes "$env:RELEASE_TYPES"
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

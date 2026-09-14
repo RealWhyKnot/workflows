@@ -17,10 +17,10 @@ function Invoke-Git {
 }
 
 function New-Commit {
-    param([string] $Text)
-    Add-Content -LiteralPath (Join-Path $sandbox 'log.txt') -Value $Text
+    param([string] $Text, [string] $Type = 'feat', [string] $File = 'log.txt')
+    Add-Content -LiteralPath (Join-Path $sandbox $File) -Value $Text
     Invoke-Git @('add', '-A')
-    Invoke-Git @('commit', '-m', "chore: $Text")
+    Invoke-Git @('commit', '-m', "${Type}: $Text")
 }
 
 function Invoke-Plan {
@@ -87,6 +87,12 @@ try {
     New-Commit 'plain tag exists now'
     Assert-Plan 'a plain same-day tag counts under an empty suffix' @{ NowUtc = $noon; Suffix = '' } @{ next_tag = 'v2026.9.8.1' }
     Assert-Plan 'a plain same-day tag also counts under the beta suffix' @{ NowUtc = $noon } @{ next_tag = 'v2026.9.8.2-beta' }
+
+    Invoke-Git @('tag', 'v2026.9.8.2-beta')
+    New-Commit 'bump the stamp' 'chore' 'version.txt'
+    New-Commit 'reword the readme' 'fix' 'README.md'
+    Assert-Plan 'commits the beta gate rejects mean nothing to do' @{ NowUtc = $noon } @{ has_changes = 'false'; next_tag = '' }
+    Assert-Plan 'release-types passes through to the gate' @{ NowUtc = $noon; ReleaseTypes = 'chore' } @{ has_changes = 'true'; next_tag = 'v2026.9.8.3-beta' }
 }
 finally {
     Pop-Location -ErrorAction SilentlyContinue

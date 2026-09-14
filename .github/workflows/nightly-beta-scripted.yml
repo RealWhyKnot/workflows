@@ -33,6 +33,21 @@ on:
         type: number
         required: false
         default: 15
+      tag-glob:
+        description: Glob the beta gate uses to find the nearest tag.
+        type: string
+        required: false
+        default: 'v*'
+      ignore-paths:
+        description: Newline-separated path globs that never change the program, added to the beta gate defaults.
+        type: string
+        required: false
+        default: ''
+      release-types:
+        description: Conventional commit types that ship. Empty uses the beta gate defaults.
+        type: string
+        required: false
+        default: ''
     outputs:
       tag:
         description: The tag that was pushed, empty when nothing changed.
@@ -44,7 +59,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     outputs:
-      tag: ${{ steps.plan.outputs.next_tag }}
+      tag: ${{ steps.gate.outputs.has_changes == 'true' && steps.plan.outputs.next_tag || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,15 +93,24 @@ jobs:
           & $env:PLANNER
           if ($LASTEXITCODE -ne 0) { throw "$env:PLANNER failed ($LASTEXITCODE)" }
 
+      - name: Check for functional changes
+        id: gate
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: RealWhyKnot/workflows/beta-gate@v1
+        with:
+          tag-glob: ${{ inputs.tag-glob }}
+          ignore-paths: ${{ inputs.ignore-paths }}
+          release-types: ${{ inputs.release-types }}
+
       - name: Report no changes
-        if: steps.plan.outputs.has_changes != 'true'
+        if: steps.gate.outputs.has_changes != 'true'
         shell: pwsh
         env:
           MESSAGE: ${{ inputs.no-changes-message }}
         run: Write-Host $env:MESSAGE
 
       - name: Push the tag
-        if: steps.plan.outputs.has_changes == 'true'
+        if: steps.gate.outputs.has_changes == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,7 +127,7 @@ jobs:
           Write-Host "Pushed $env:TAG"
 
       - name: Dispatch the release
-        if: steps.plan.outputs.has_changes == 'true' && inputs.dispatch-release
+        if: steps.gate.outputs.has_changes == 'true' && inputs.dispatch-release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

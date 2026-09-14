@@ -28,6 +28,16 @@ on:
         type: boolean
         required: false
         default: false
+      ignore-paths:
+        description: Newline-separated path globs that never change the program, added to the beta gate defaults.
+        type: string
+        required: false
+        default: ''
+      release-types:
+        description: Conventional commit types that ship. Empty uses the beta gate defaults.
+        type: string
+        required: false
+        default: ''
     outputs:
       tag:
         description: The tag that was pushed, empty when nothing changed.
@@ -35,7 +45,7 @@ on:
 
 jobs:
   tag:
-    name: Tag a beta when main moved
+    name: Tag a beta when main has functional changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -53,6 +63,8 @@ jobs:
         with:
           timezone: ${{ inputs.timezone }}
           suffix: ${{ inputs.suffix }}
+          ignore-paths: ${{ inputs.ignore-paths }}
+          release-types: ${{ inputs.release-types }}
 
       - name: Check the version sequence
         if: steps.plan.outputs.has_changes == 'true' && inputs.assert-sequence
@@ -69,7 +81,7 @@ jobs:
           TAG: ${{ steps.plan.outputs.next_tag }}
           REPO: ${{ github.repository }}
         run: |
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' tag -a $env:TAG -m $env:TAG
+          git -c 'user.name=github-actions[bot]' -c 'user.email=41898282+github-actions[bot]@users.noreply.github.com' tag -a $env:TAG -m $env:TAG
           if ($LASTEXITCODE -ne 0) { throw "git tag failed ($LASTEXITCODE)" }
           git push "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:REPO).git" $env:TAG
           if ($LASTEXITCODE -ne 0) { throw "git push failed ($LASTEXITCODE)" }

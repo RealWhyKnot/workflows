@@ -1,0 +1,48 @@
+name: Beta gate
+description: Decide whether any commit since the last tag changes the shipped program.
+
+inputs:
+  base:
+    description: Ref to compare from. Defaults to the nearest tag matching tag-glob.
+    required: false
+    default: ''
+  tag-glob:
+    description: Glob for finding the nearest tag.
+    required: false
+    default: 'v*'
+  ignore-paths:
+    description: Newline-separated path globs that never change the program, added to the defaults.
+    required: false
+    default: ''
+  release-types:
+    description: Conventional commit types that ship. Empty uses feat fix perf refactor revert.
+    required: false
+    default: ''
+
+outputs:
+  has_changes:
+    description: true when at least one commit has a shipping type and touches a functional path.
+    value: ${{ steps.gate.outputs.has_changes }}
+  base:
+    description: The ref the commits were compared from.
+    value: ${{ steps.gate.outputs.base }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check for functional changes
+      id: gate
+      shell: pwsh
+      env:
+        BASE: ${{ inputs.base }}
+        TAG_GLOB: ${{ inputs.tag-glob }}
+        IGNORE_PATHS: ${{ inputs.ignore-paths }}
+        RELEASE_TYPES: ${{ inputs.release-types }}
+      run: |
+        $global:LASTEXITCODE = 0
+        $null = & '${{ github.action_path }}/Get-BetaGate.ps1' `
+          -Base "$env:BASE" `
+          -TagGlob "$env:TAG_GLOB" `
+          -IgnorePaths "$env:IGNORE_PATHS" `
+          -ReleaseTypes "$env:RELEASE_TYPES"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -5,6 +5,8 @@ param(
     [datetime] $NowUtc = ([datetime]::UtcNow),
     [string] $Suffix = 'beta',
     [string] $TagGlob = 'v*',
+    [string[]] $IgnorePaths = @(),
+    [string[]] $ReleaseTypes = @(),
     [string] $OutputPath = $env:GITHUB_OUTPUT
 )
 
@@ -19,21 +21,14 @@ function Set-Output {
     }
 }
 
+$gate = & (Join-Path $PSScriptRoot '../beta-gate/Get-BetaGate.ps1') -TagGlob $TagGlob -IgnorePaths $IgnorePaths -ReleaseTypes $ReleaseTypes -OutputPath '' | Select-Object -Last 1
+if (-not $gate.HasChanges) {
+    Set-Output @{ has_changes = 'false'; next_tag = '' }
+    exit 0
+}
+
 $head = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $head) { throw 'Could not resolve HEAD.' }
-
-$latest = @(& git tag --list $TagGlob --sort=-creatordate) | Where-Object { $_ } | Select-Object -First 1
-$global:LASTEXITCODE = 0
-
-if ($latest) {
-    $latestSha = (& git rev-list -n 1 $latest).Trim()
-    $global:LASTEXITCODE = 0
-    if ($latestSha -eq $head) {
-        Write-Host "No commits since $latest; nothing to tag."
-        Set-Output @{ has_changes = 'false'; next_tag = '' }
-        exit 0
-    }
-}
 
 $zone = [TimeZoneInfo]::FindSystemTimeZoneById($Timezone)
 $today = [TimeZoneInfo]::ConvertTimeFromUtc($NowUtc, $zone).ToString('yyyy.M.d')
