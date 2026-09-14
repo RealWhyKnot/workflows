@@ -61,6 +61,7 @@ if ($bash) {
         Assert 'a plain subject passes by default' ((Invoke-Hook 'made changes') -eq 0)
         Assert 'CHECK_CONVENTIONAL rejects a plain subject' ((Invoke-Hook 'made changes' 'CHECK_CONVENTIONAL=1') -ne 0)
         Assert 'CHECK_CONVENTIONAL accepts a conventional subject' ((Invoke-Hook 'feat: a thing' 'CHECK_CONVENTIONAL=1') -eq 0)
+        Assert 'CHECK_CONVENTIONAL accepts a revert subject' ((Invoke-Hook 'revert: a thing' 'CHECK_CONVENTIONAL=1') -eq 0)
         Assert 'CHECK_CONVENTIONAL skips a merge subject' ((Invoke-Hook 'Merge branch x' 'CHECK_CONVENTIONAL=1') -eq 0)
         Assert 'CHECK_CONVENTIONAL skips a fixup subject' ((Invoke-Hook 'fixup! feat: a thing' 'CHECK_CONVENTIONAL=1') -eq 0)
         Assert 'CHECK_CONVENTIONAL skips a squash subject' ((Invoke-Hook 'squash! feat: a thing' 'CHECK_CONVENTIONAL=1') -eq 0)

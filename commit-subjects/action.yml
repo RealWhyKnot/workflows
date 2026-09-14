@@ -21,7 +21,7 @@ inputs:
   conventional-pattern:
     description: Regex a conventional subject must match.
     required: false
-    default: '^(feat|fix|chore|ci|docs|refactor|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+'
+    default: '^(feat|fix|chore|ci|docs|refactor|revert|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+'
   forbidden-body-pattern:
     description: Regex rejected anywhere in a non-merge commit body. Empty skips the check.
     required: false

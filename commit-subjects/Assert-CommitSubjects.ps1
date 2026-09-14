@@ -9,7 +9,7 @@ param(
     [bool] $CheckStamp = $true,
     [string] $StampPattern = '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}|beta))?\)',
     [bool] $CheckConventional = $false,
-    [string] $ConventionalPattern = '^(feat|fix|chore|ci|docs|refactor|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+',
+    [string] $ConventionalPattern = '^(feat|fix|chore|ci|docs|refactor|revert|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+',
     [string] $ForbiddenBodyPattern = ''
 )
 

@@ -66,6 +66,7 @@ try {
     $nonConv = New-Commit -Subject 'made some changes'
     $withIssue = New-Commit -Subject 'docs: tidy the readme' -Body 'Refs #412 upstream.'
     $merge = New-Commit -Subject 'Merge branch feature/x into main'
+    $revert = New-Commit -Subject 'revert: drop the thing (2026.9.8.3-E5F6)'
 
     Assert-Pass 'single stamp passes' @{ Range = "$base..$clean" }
     Assert-Fail 'double stamp fails' @{ Range = "$clean..$double" } 'carries 2 build-version stamps'
@@ -76,6 +77,7 @@ try {
     Assert-Fail 'forbidden body pattern fails' @{ Range = "$nonConv..$withIssue"; ForbiddenBodyPattern = '(^|[^A-Za-z0-9_])#[0-9]+' } 'references an issue number'
     Assert-Pass 'forbidden body pattern skipped when empty' @{ Range = "$nonConv..$withIssue" }
     Assert-Pass 'merge subject skips the conventional check' @{ Range = "$withIssue..$merge"; CheckConventional = $true }
+    Assert-Pass 'revert is a conventional type' @{ Range = "$merge..$revert"; CheckConventional = $true }
 
     Assert-Pass 'push-range shas resolve' @{ BeforeSha = $base; AfterSha = $clean }
     Assert-Pass 'no shas at all falls back to the tip commit, as on workflow_dispatch' @{}
