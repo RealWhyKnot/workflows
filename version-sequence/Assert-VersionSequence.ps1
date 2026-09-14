@@ -10,13 +10,6 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Invoke-Git {
-    param([Parameter(Mandatory = $true)][string[]] $Arguments)
-    $output = & git @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
-    return @($output)
-}
-
 $suffix = if ($PrereleaseSuffix) { "(-(?:$PrereleaseSuffix))?" } else { '' }
 
 function Get-ExpectedRevision {
@@ -24,7 +17,9 @@ function Get-ExpectedRevision {
 
     $pattern = "^v$([regex]::Escape($DateStamp))\.(\d+)$Suffix$"
     $highest = -1
-    foreach ($existing in @(Invoke-Git -Arguments @('tag', '--list', "v$DateStamp.*"))) {
+    $tags = @(& git tag --list "v$DateStamp.*")
+    if ($LASTEXITCODE -ne 0) { throw "git tag --list failed with exit code $LASTEXITCODE" }
+    foreach ($existing in $tags) {
         if ($existing -eq $ExcludeTag) { continue }
         if ($existing -match $pattern) {
             $value = [int] $Matches[1]

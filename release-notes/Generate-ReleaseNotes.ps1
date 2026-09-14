@@ -34,13 +34,13 @@ function Invoke-Git {
 
 function Resolve-PreviousTag {
     param([string] $Tag)
-    $isPre = $Tag -match '-'
-    $args = @('describe', '--tags', '--abbrev=0')
-    if (-not $isPre) { $args += @('--exclude', '*-*') }
-    $args += "$Tag^"
-    $prev = (Invoke-Git -Arguments $args | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0) { return '' }
-    return "$prev".Trim()
+    $prev = @(if ($Tag -match '-') {
+        & git describe --tags --abbrev=0 "$Tag^" 2>$null
+    } else {
+        & git describe --tags --abbrev=0 --exclude '*-*' "$Tag^" 2>$null
+    })
+    if ($LASTEXITCODE -ne 0 -or $prev.Count -eq 0) { return '' }
+    return "$($prev[0])".Trim()
 }
 
 function Get-CommitsFromApi {

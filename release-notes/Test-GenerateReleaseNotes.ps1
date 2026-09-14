@@ -66,6 +66,14 @@ try {
     Assert-NotContains $body '(2026.1.2.0-AB12)' 'the CalVer build stamp is stripped'
     Assert-NotContains $body 'the first thing' 'commits before the previous tag are excluded'
 
+    Set-Content -LiteralPath (Join-Path $sandbox 'release-notes.txt') -Value 'x'
+    New-Commit 'fix: between the stable and the beta'
+    git tag v2026.1.2.1-beta
+    New-Commit 'feat: after the beta'
+    git tag v2026.1.3.0
+    $stable = & $generator -Tag v2026.1.3.0 -Repository '' | Out-String
+    Assert-Contains $stable 'between the stable and the beta' 'stable notes skip past betas even when a checkout file contains a hyphen'
+
     $extra = & $generator -Tag v2026.1.2.0 -Repository '' -Extra '## Downloads', '- a file' | Out-String
     Assert-Contains $extra '## Downloads' 'extra markdown is appended'
 
