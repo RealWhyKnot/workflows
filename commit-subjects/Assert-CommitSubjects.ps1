@@ -28,7 +28,7 @@ function Resolve-Range {
 $resolved = Resolve-Range
 Write-Host "Validating commits in range: $resolved"
 
-$log = @(& git log --format='%H %s' $resolved)
+$log = @(& git log --first-parent --format='%H %s' $resolved)
 if ($LASTEXITCODE -ne 0) { throw "git log $resolved failed ($LASTEXITCODE)" }
 
 $failures = 0

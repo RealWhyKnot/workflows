@@ -86,6 +86,14 @@ try {
 
     $strict = '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-beta)?\)'
     Assert-Pass 'a hex suffix is not a stamp under the -beta-only pattern' @{ Range = "$clean..$double"; StampPattern = $strict }
+
+    Invoke-Git @('checkout', '--quiet', '-b', 'foreign', $base)
+    $foreign = New-Commit -Subject 'upstream work that was never conventional'
+    Invoke-Git @('checkout', '--quiet', 'main')
+    Invoke-Git @('merge', '--quiet', '-s', 'ours', 'foreign', '-m', 'chore: absorb foreign history')
+    $mergeOurs = (& git rev-parse HEAD).Trim()
+    Assert-Pass 'foreign commits behind a merge are not validated' @{ Range = "$revert..$mergeOurs"; CheckConventional = $true }
+    Assert-Fail 'first-parent commits are still validated across a merge' @{ Range = "$double..$mergeOurs"; CheckConventional = $true } 'is not a conventional commit'
 }
 finally {
     Pop-Location -ErrorAction SilentlyContinue
