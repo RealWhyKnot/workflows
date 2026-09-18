@@ -84,6 +84,11 @@ Builds release notes from conventional commits and writes them to a file for `gh
 
 The only output is `file`, the path to the generated markdown.
 
+Commit authors are credited as a link to their profile, never as a bare `@handle`. A bare handle is
+parsed as a mention: it pings that person and adds them to the release's Contributors avatar list,
+which is wrong when a fork's notes cover commits their upstream author never sent to my repo. The
+link renders the same and notifies nobody.
+
 Commits are bucketed by conventional-commit prefix into Breaking Changes, Features, Bug Fixes,
 Performance, Changes, Documentation, Build, CI, Tests, Chores and Other. A `type!:` subject goes to
 Breaking Changes. Merge commits and anything carrying `[skip changelog]` are dropped, and a trailing

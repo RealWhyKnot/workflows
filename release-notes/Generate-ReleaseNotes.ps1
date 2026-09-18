@@ -11,6 +11,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'AuthorCredit.ps1')
+
 $Categories = @(
     @{ Prefix = 'feat';     Name = 'Features' }
     @{ Prefix = 'fix';      Name = 'Bug Fixes' }
@@ -45,33 +47,26 @@ function Resolve-PreviousTag {
 
 function Get-CommitsFromApi {
     param([string] $Repository, [string] $Base, [string] $Head)
+    $filter = '[.sha[0:7], (.author.login // ""), .commit.author.name, (.parents|length), (.commit.message|split("\n")[0])] | @tsv'
     if ($Base) {
-        $json = & gh api "repos/$Repository/compare/$Base...$Head" --paginate 2>$null
+        $rows = @(& gh api "repos/$Repository/compare/$Base...$Head" --paginate --jq ".commits[] | $filter" 2>$null)
     } else {
-        $json = & gh api "repos/$Repository/commits?sha=$Head&per_page=100" 2>$null
+        $rows = @(& gh api "repos/$Repository/commits?sha=$Head&per_page=100" --jq ".[] | $filter" 2>$null)
     }
-    if ($LASTEXITCODE -ne 0 -or -not $json) { return $null }
-    try { $data = $json | ConvertFrom-Json } catch { return $null }
-    if (-not $Base) {
-        $flat = @($data)
-        $wrapped = [pscustomobject]@{ commits = $flat }
-        [array]::Reverse($wrapped.commits)
-        $data = @($wrapped)
-    }
+    if ($LASTEXITCODE -ne 0 -or $rows.Count -eq 0) { return $null }
     $commits = @()
-    foreach ($page in @($data)) {
-        foreach ($c in @($page.commits)) {
-            if (@($c.parents).Count -gt 1) { continue }
-            $login = ''
-            if ($c.author -and $c.author.login) { $login = $c.author.login }
-            $commits += [pscustomobject]@{
-                Sha     = $c.sha.Substring(0, 7)
-                Subject = ($c.commit.message -split "`n")[0]
-                Login   = $login
-                Name    = $c.commit.author.name
-            }
+    foreach ($row in $rows) {
+        $fields = "$row".Split("`t")
+        if ($fields.Count -lt 5) { continue }
+        if ([int] $fields[3] -gt 1) { continue }
+        $commits += [pscustomobject]@{
+            Sha     = $fields[0]
+            Subject = $fields[4]
+            Login   = $fields[1]
+            Name    = $fields[2]
         }
     }
+    if (-not $Base) { return $commits }
     [array]::Reverse($commits)
     return $commits
 }
@@ -125,8 +120,7 @@ foreach ($commit in $commits) {
     $subject = ($subject -replace $StampPattern, '').Trim()
     if (-not $subject) { continue }
 
-    $who = $commit.Login
-    if ($who) { $who = "@$who" } else { $who = $commit.Name }
+    $who = Get-AuthorCredit -Login $commit.Login -Name $commit.Name
     $buckets[(Get-Category -Subject $subject)].Add("- $subject by $who in $($commit.Sha)")
 }
 

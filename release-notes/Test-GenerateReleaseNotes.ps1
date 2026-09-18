@@ -28,6 +28,24 @@ function Assert-NotContains {
 }
 
 $generator = Join-Path $PSScriptRoot 'Generate-ReleaseNotes.ps1'
+. (Join-Path $PSScriptRoot 'AuthorCredit.ps1')
+
+function Assert-Equal {
+    param([string] $Actual, [string] $Expected, [string] $Because)
+    if ($Actual -ne $Expected) {
+        Write-Host "FAIL: $Because" -ForegroundColor Red
+        Write-Host "      expected: $Expected"
+        Write-Host "      actual:   $Actual"
+        $script:failures++
+        return
+    }
+    Write-Host "ok: $Because"
+}
+
+Assert-Equal (Get-AuthorCredit -Login 'RealWhyKnot' -Name 'WhyKnot') '[RealWhyKnot](https://github.com/RealWhyKnot)' 'a login is credited as a profile link, never a bare @mention'
+Assert-Equal (Get-AuthorCredit -Login 'benaclejames' -Name 'Ben Thomas') '[benaclejames](https://github.com/benaclejames)' 'an outside author is credited the same way, with no mention'
+Assert-Equal (Get-AuthorCredit -Login '' -Name 'Test Person') 'Test Person' 'a commit with no login is credited by name alone'
+
 $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("relnotes-" + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $sandbox | Out-Null
 Push-Location $sandbox
