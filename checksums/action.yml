@@ -1,0 +1,61 @@
+name: Checksums
+description: Hash release archives into a per-archive integrity manifest and a markdown table for the notes.
+
+inputs:
+  archives:
+    description: Newline-separated archive paths or globs. Every pattern must match at least one file.
+    required: true
+  contents:
+    description: Directory whose files are listed after each archive row, for a manifest that covers what is inside.
+    required: false
+    default: ''
+  manifest-suffix:
+    description: Suffix for the manifest written beside each archive.
+    required: false
+    default: '.integrity.tsv'
+  manifest:
+    description: Set false to build only the table.
+    required: false
+    default: 'true'
+  units:
+    description: MiB (1048576 bytes) or MB (1000000).
+    required: false
+    default: 'MiB'
+  table-file:
+    description: Optional path to write the markdown table to.
+    required: false
+    default: ''
+
+outputs:
+  sha256:
+    description: SHA-256 of the first archive.
+    value: ${{ steps.checksums.outputs.sha256 }}
+  manifests:
+    description: Newline-separated paths of the manifests written.
+    value: ${{ steps.checksums.outputs.manifests }}
+  table:
+    description: The markdown table.
+    value: ${{ steps.checksums.outputs.table }}
+
+runs:
+  using: composite
+  steps:
+    - name: Write checksums
+      id: checksums
+      shell: pwsh
+      env:
+        ARCHIVES: ${{ inputs.archives }}
+        CONTENTS: ${{ inputs.contents }}
+        MANIFEST_SUFFIX: ${{ inputs.manifest-suffix }}
+        MANIFEST: ${{ inputs.manifest }}
+        UNITS: ${{ inputs.units }}
+        TABLE_FILE: ${{ inputs.table-file }}
+      run: |
+        $archives = @($env:ARCHIVES -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $arguments = @{ Archives = $archives; Units = $env:UNITS }
+        if ($env:CONTENTS) { $arguments.Contents = $env:CONTENTS }
+        if ($env:MANIFEST_SUFFIX) { $arguments.ManifestSuffix = $env:MANIFEST_SUFFIX }
+        if ($env:TABLE_FILE) { $arguments.TableFile = $env:TABLE_FILE }
+        if ($env:MANIFEST -eq 'false') { $arguments.NoManifest = $true }
+        & '${{ github.action_path }}/Write-Checksums.ps1' @arguments
+        if ($LASTEXITCODE -ne 0) { throw "checksums failed ($LASTEXITCODE)" }

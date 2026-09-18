@@ -56,6 +56,41 @@ default `version-update:semver-patch`) and `merge-method` (default `rebase`).
 Dependabot hands its workflows a read-only token, so the write permissions above have to be spelled
 out on the calling job or the merge call fails.
 
+## checksums
+
+Hashes release archives, writes an integrity manifest beside each one, and hands back a markdown
+table for the notes.
+
+```yaml
+- name: Checksums
+  id: checksums
+  uses: RealWhyKnot/workflows/checksums@v1
+  with:
+    archives: |
+      dist/*.zip
+      dist/*.tar.gz
+    contents: dist/publish
+```
+
+| input | default | meaning |
+| --- | --- | --- |
+| `archives` | required | Newline-separated paths or globs. A pattern that matches nothing is an error, so a renamed artifact fails the job instead of publishing a table with a row missing. |
+| `contents` | none | Directory whose files are listed after each archive row, so the manifest covers what is inside the archive too. |
+| `manifest-suffix` | `.integrity.tsv` | Suffix for the file written beside each archive. |
+| `manifest` | `true` | Set `false` for a table and nothing on disk. |
+| `units` | `MiB` | `MiB` is 1048576 bytes, `MB` is 1000000. The header says which. |
+| `table-file` | none | Also write the table to this path. |
+
+Outputs are `sha256` (the first archive), `manifests` and `table`.
+
+The manifest is tab-separated, no header, lowercase hashes, `hash  bytes  name`, with the archive
+itself on the first line. A `.tar.gz` drops both extensions, so `app-1.0.0.tar.gz` writes
+`app-1.0.0.integrity.tsv`.
+
+Hash the archives on the runner that built them and read the manifests later. Downloading a release
+asset to hash it is how VRCFaceTracking published a table of wrong hashes for three releases:
+`Start-Process gh api -RedirectStandardOutput` re-encodes a binary stream rather than copying bytes.
+
 ## release-notes
 
 Builds release notes from conventional commits and writes them to a file for `gh release create`.
