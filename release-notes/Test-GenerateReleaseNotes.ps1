@@ -45,6 +45,8 @@ function Assert-Equal {
 Assert-Equal (Get-AuthorCredit -Login 'RealWhyKnot' -Name 'WhyKnot') '[RealWhyKnot](https://github.com/RealWhyKnot)' 'a login is credited as a profile link, never a bare @mention'
 Assert-Equal (Get-AuthorCredit -Login 'benaclejames' -Name 'Ben Thomas') '[benaclejames](https://github.com/benaclejames)' 'an outside author is credited the same way, with no mention'
 Assert-Equal (Get-AuthorCredit -Login '' -Name 'Test Person') 'Test Person' 'a commit with no login is credited by name alone'
+Assert-Equal (Get-AuthorCredit -Login 'dependabot[bot]' -Name 'dependabot[bot]') 'dependabot[bot]' 'a bot is named in plain text, because its login is not a profile path'
+Assert-Equal (Get-AuthorCredit -Login 'github-actions[bot]' -Name 'github-actions[bot]') 'github-actions[bot]' 'the actions bot is named the same way'
 
 $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("relnotes-" + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $sandbox | Out-Null
