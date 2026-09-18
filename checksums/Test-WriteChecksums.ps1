@@ -76,6 +76,17 @@ try {
     $threw = $false
     try { & $writer -Archives @('nothing-here-*.zip') | Out-Null } catch { $threw = $true }
     Assert-Equal "$threw" 'True' 'a pattern matching nothing is an error, not an empty table'
+
+    New-Item -ItemType Directory -Force 'sib/app-2.0.0-win-x64' | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'sib/app-2.0.0-win-x64/only.txt'), 'inside')
+    [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'sib/app-2.0.0-win-x64.zip'), [byte[]](1..16))
+    [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'sib/app-2.0.0-osx-x64.zip'), [byte[]](1..32))
+    & $writer -Archives @('sib/*.zip') | Out-Null
+    $sibling = @(Get-Content 'sib/app-2.0.0-win-x64.integrity.tsv')
+    Assert-Equal "$($sibling.Count)" '2' 'with no -Contents, an archive picks up its own sibling directory'
+    Assert-Contains ($sibling -join "`n") 'only.txt' 'and lists that directory only, not another archive''s'
+    $lonely = @(Get-Content 'sib/app-2.0.0-osx-x64.integrity.tsv')
+    Assert-Equal "$($lonely.Count)" '1' 'an archive with no sibling directory gets just its own row'
 }
 finally {
     [System.IO.Directory]::SetCurrentDirectory($previousDirectory)

@@ -75,7 +75,7 @@ table for the notes.
 | input | default | meaning |
 | --- | --- | --- |
 | `archives` | required | Newline-separated paths or globs. A pattern that matches nothing is an error, so a renamed artifact fails the job instead of publishing a table with a row missing. |
-| `contents` | none | Directory whose files are listed after each archive row, so the manifest covers what is inside the archive too. |
+| `contents` | sibling | Directory whose files are listed after each archive row, so the manifest covers what is inside the archive too. Left unset, each archive picks up a directory sitting beside it with the same base name, which is what a publish-then-compress job already produces. |
 | `manifest-suffix` | `.integrity.tsv` | Suffix for the file written beside each archive. |
 | `manifest` | `true` | Set `false` for a table and nothing on disk. |
 | `units` | `MiB` | `MiB` is 1048576 bytes, `MB` is 1000000. The header says which. |

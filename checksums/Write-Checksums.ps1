@@ -26,11 +26,11 @@ foreach ($pattern in $Archives) {
 }
 if ($resolved.Count -eq 0) { throw 'No archives to hash.' }
 
-$extra = @()
-if ($Contents) {
-    if (-not (Test-Path -LiteralPath $Contents)) { throw "Contents directory '$Contents' does not exist." }
-    $root = (Resolve-Path -LiteralPath $Contents).Path
-    $extra = @(Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName | ForEach-Object {
+function Get-ContentRows {
+    param([string] $Directory)
+    if (-not $Directory -or -not (Test-Path -LiteralPath $Directory -PathType Container)) { return @() }
+    $root = (Resolve-Path -LiteralPath $Directory).Path
+    return @(Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName | ForEach-Object {
         [pscustomobject]@{
             Name = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
             Size = $_.Length
@@ -38,6 +38,11 @@ if ($Contents) {
         }
     })
 }
+
+if ($Contents -and -not (Test-Path -LiteralPath $Contents -PathType Container)) {
+    throw "Contents directory '$Contents' does not exist."
+}
+$shared = Get-ContentRows -Directory $Contents
 
 $divisor = if ($Units -eq 'MB') { 1000000 } else { 1048576 }
 $rows = @()
@@ -47,8 +52,6 @@ foreach ($archive in $resolved) {
     $rows += [pscustomobject]@{ Name = $archive.Name; Size = $archive.Length; Hash = $hash }
 
     if (-not $NoManifest) {
-        $lines = @("$hash`t$($archive.Length)`t$($archive.Name)")
-        foreach ($file in $extra) { $lines += "$($file.Hash)`t$($file.Size)`t$($file.Name)" }
         $base = $archive.FullName
         foreach ($double in @('.tar.gz', '.tar.bz2', '.tar.xz')) {
             if ($base.EndsWith($double, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -58,6 +61,9 @@ foreach ($archive in $resolved) {
         }
         if ($base -eq $archive.FullName) { $base = [System.IO.Path]::ChangeExtension($base, $null).TrimEnd('.') }
         $manifest = $base + $ManifestSuffix
+        $contentRows = if ($Contents) { $shared } else { Get-ContentRows -Directory $base }
+        $lines = @("$hash`t$($archive.Length)`t$($archive.Name)")
+        foreach ($file in $contentRows) { $lines += "$($file.Hash)`t$($file.Size)`t$($file.Name)" }
         [System.IO.File]::WriteAllLines($manifest, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
         $manifests += $manifest
     }
