@@ -57,5 +57,6 @@ runs:
         if ($env:MANIFEST_SUFFIX) { $arguments.ManifestSuffix = $env:MANIFEST_SUFFIX }
         if ($env:TABLE_FILE) { $arguments.TableFile = $env:TABLE_FILE }
         if ($env:MANIFEST -eq 'false') { $arguments.NoManifest = $true }
+        $global:LASTEXITCODE = 0
         & '${{ github.action_path }}/Write-Checksums.ps1' @arguments
         if ($LASTEXITCODE -ne 0) { throw "checksums failed ($LASTEXITCODE)" }

@@ -39,6 +39,7 @@ runs:
         $repository = '${{ inputs.repository }}'
         if (-not $repository) { $repository = '${{ github.repository }}' }
         $out = Join-Path '${{ runner.temp }}' 'release-notes.md'
+        $global:LASTEXITCODE = 0
         & '${{ github.action_path }}/Generate-ReleaseNotes.ps1' `
           -Tag '${{ inputs.tag }}' `
           -Repository $repository `
