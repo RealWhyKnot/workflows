@@ -149,6 +149,21 @@ checkout with `fetch-depth: 0`.
     check-conventional: true
 ```
 
+## workflow-syntax
+
+Parses every tracked `.ps1`, `.psm1` and `.psd1` file and every inline `pwsh` block under
+`.github/workflows`, then fails with a list of the syntax errors it found.
+
+```yaml
+- uses: actions/checkout@v7
+- uses: RealWhyKnot/workflows/workflow-syntax@v1
+```
+
+`${{ }}` expressions inside a block are fine. A block only gets checked when its step sets
+`shell: pwsh` above `run: |`. Steps that inherit `defaults.run.shell` or put `shell` after `run` are
+skipped, and so are composite `action.yml` files. Pass `root` to scan somewhere other than the
+workspace.
+
 ## resolve-tag
 
 Validates the tag being released and tells you what it is.
@@ -173,6 +188,27 @@ manual re-release. Outputs `tag`, `version` (the tag without its `v`), `prerelea
 
 I keep the two patterns separate because a `-A1B2` tag is valid but isn't a beta, and some of my repos
 want it treated one way and some the other.
+
+## version-sequence
+
+Fails unless a CalVer tag uses the next free revision for its day.
+
+```yaml
+- uses: RealWhyKnot/workflows/version-sequence@v1
+  with:
+    tag: ${{ steps.tag.outputs.tag }}
+```
+
+A day starts at `.0`. After that each tag is one above the highest same-day tag, release or
+prerelease. The tag being checked is left out of the count, and re-running a release for a tag that
+already exists still passes. Check out with `fetch-depth: 0` or the earlier tags aren't there to
+count.
+
+`prerelease-suffix` is a regex for the part after the hyphen. Its default `[A-Za-z0-9]{4}` accepts
+`-beta` and `-A1B2` but not `-rc.1`. The same pattern is used to validate the tag and to pick which
+same-day tags count. I pass `[A-Za-z0-9][A-Za-z0-9.-]*` in repos that use any suffix, but a wider
+pattern counts more tags and can change the revision it expects. Set `repo-root` to read tags from
+another checkout.
 
 ## publish-release
 
@@ -278,6 +314,64 @@ and drop the second job. A tag pushed with `GITHUB_TOKEN` never fires that trigg
 `.github/scripts/Get-NightlyBetaPlan.ps1`, expects `has_changes` and `next_tag` outputs from it, and
 ANDs the result with the beta gate.
 
+## beta-gate
+
+The check behind both nightly workflows. It says whether any commit since the last tag changes the
+program.
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+
+- id: gate
+  uses: RealWhyKnot/workflows/beta-gate@v1
+  with:
+    ignore-paths: |
+      app/tests/**
+```
+
+Outputs are `has_changes` (`true` or `false`) and `base`, the ref it compared from.
+
+| input | default | meaning |
+| --- | --- | --- |
+| `base` | nearest tag | Ref to compare from. If it doesn't exist, everything counts as new and the gate passes. |
+| `tag-glob` | `v*` | Which tags count when looking for the nearest one. |
+| `ignore-paths` | none | Newline-separated globs added to the built-in list. |
+| `release-types` | `feat fix perf refactor revert` | Types that ship. Setting it replaces the list. |
+
+The built-in ignore list is `.github/**`, `.githooks/**`, `docs/**`, `wiki/**`, `tests/**`,
+`test/**`, `*.md`, `LICENSE*`, `NOTICE`, `.gitignore`, `.gitattributes`, `.editorconfig` and
+`.vscode/**`. A `*` stops at `/`. `*.md` only matches Markdown at the repo root, and `src/help.md`
+still counts.
+
+Merge commits are skipped but the commits they bring in are checked. A subject that isn't a
+conventional commit is judged on its paths alone. With no tag reachable from HEAD the gate passes,
+and a tag on HEAD means there's nothing to check. A shallow checkout has no tags, which makes every
+run pass.
+
+## nightly-plan
+
+Runs the beta gate, then picks the next same-day nightly tag. It's the planner inside
+`nightly-beta.yml`. It doesn't create or push the tag.
+
+```yaml
+- id: plan
+  uses: RealWhyKnot/workflows/nightly-plan@v1
+  with:
+    suffix: beta
+```
+
+Outputs `has_changes` and `next_tag`, which is empty when the gate fails. The tag is
+`vYYYY.M.D.N-suffix`, with `N` one above the highest same-day tag that has no suffix or the same
+one. Tags with any other suffix are ignored. Like the gate, it needs `fetch-depth: 0`.
+
+| input | default | meaning |
+| --- | --- | --- |
+| `timezone` | `America/Chicago` | Whose calendar date goes in the tag. |
+| `suffix` | `beta` | Text after the hyphen. Empty gives a plain `vYYYY.M.D.N`. |
+| `tag-glob`, `ignore-paths`, `release-types` | as `beta-gate` | Passed through to the gate. |
+
 ## hooks
 
 `commit-msg` rejects a subject with more than one build stamp, and `prepare-commit-msg` appends the
@@ -313,4 +407,6 @@ Pin to `@v1`. That tag moves as fixes are released, and every repo picks them up
 Pin to a full tag like `@v1.0.0` if you want a repo frozen.
 
 Because `v1` moves, CI here runs every `Test-*.ps1` in the repo on both ubuntu and windows, plus
-actionlint over the workflows, before I move the tag.
+actionlint over the workflows, before I move the tag. `commits.yml` runs `commit-msg-check.yml` on
+this repo's own pushes and pull requests, with stamps off and conventional subjects required. It
+isn't meant to be called from other repos.
