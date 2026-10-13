@@ -94,6 +94,40 @@ try {
     $stable = & $generator -Tag v2026.1.3.0 -Repository '' | Out-String
     Assert-Contains $stable 'between the stable and the beta' 'stable notes skip past betas even when a checkout file contains a hyphen'
 
+    $crlfMessage = Join-Path $sandbox 'crlf-message.txt'
+    [System.IO.File]::WriteAllText($crlfMessage, "fix: a subject written with CRLF (2026.1.4.0-CD34)`r`n`r`nA body line.`r`n")
+    git commit --quiet --allow-empty --cleanup=verbatim -F $crlfMessage
+    git tag v2026.1.4.0
+    $crlfOut = Join-Path $sandbox 'crlf-notes.md'
+    & $generator -Tag v2026.1.4.0 -Repository '' -OutFile $crlfOut | Out-Null
+    $crlf = [System.IO.File]::ReadAllText($crlfOut)
+    Assert-Contains $crlf '- fix: a subject written with CRLF by Test Person in' 'a CRLF subject from git loses its stamp and its carriage return'
+    Assert-NotContains $crlf "`r" 'no carriage return reaches the notes from git'
+
+    $global:ghFixture = @{
+        commits = @(
+            @{ sha = '67f9ddc0000000000000000000000000000000ff'; author = @{ login = 'RealWhyKnot' }; commit = @{ author = @{ name = 'WhyKnot' }; message = "fix(http): cap each request (2026.10.9.0-1528)`r`n`r`nBody.`r`n" }; parents = @(@{}) }
+            @{ sha = '38a1e5d0000000000000000000000000000000ff'; author = @{ login = 'RealWhyKnot' }; commit = @{ author = @{ name = 'WhyKnot' }; message = "feat: an LF subject (2026.10.9.0-1528)`n`nBody.`n" }; parents = @(@{}) }
+        )
+    } | ConvertTo-Json -Depth 6
+    $global:ghCalled = $false
+    function gh {
+        $global:ghCalled = $true
+        $query = $args[[array]::IndexOf($args, '--jq') + 1]
+        $global:ghFixture | jq -r $query
+    }
+    $apiOut = Join-Path $sandbox 'api-notes.md'
+    & $generator -Tag v2026.1.4.0 -PreviousTag v2026.1.3.0 -Repository 'RealWhyKnot/sample' -OutFile $apiOut | Out-Null
+    Remove-Item function:gh
+    $apiCalled = $global:ghCalled
+    Remove-Variable -Scope Global -Name ghFixture, ghCalled
+    $api = [System.IO.File]::ReadAllText($apiOut)
+    Assert-Equal "$apiCalled" 'True' 'the API path is taken when a repository is given'
+    Assert-Contains $api '- fix(http): cap each request by [RealWhyKnot](https://github.com/RealWhyKnot) in 67f9ddc' 'a CRLF subject from the API loses its stamp'
+    Assert-Contains $api '- feat: an LF subject by [RealWhyKnot](https://github.com/RealWhyKnot) in 38a1e5d' 'an LF subject from the API still loses its stamp'
+    Assert-NotContains $api '\r' 'no escaped carriage return reaches the notes from the API'
+    Assert-NotContains $api '(2026.10.9.0-1528)' 'no build stamp survives in API notes'
+
     $extra = & $generator -Tag v2026.1.2.0 -Repository '' -Extra '## Downloads', '- a file' | Out-String
     Assert-Contains $extra '## Downloads' 'extra markdown is appended'
 

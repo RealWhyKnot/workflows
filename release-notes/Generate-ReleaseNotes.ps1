@@ -47,7 +47,7 @@ function Resolve-PreviousTag {
 
 function Get-CommitsFromApi {
     param([string] $Repository, [string] $Base, [string] $Head)
-    $filter = '[.sha[0:7], (.author.login // ""), .commit.author.name, (.parents|length), (.commit.message|split("\n")[0])] | @tsv'
+    $filter = '[.sha[0:7], (.author.login // ""), .commit.author.name, (.parents|length), (.commit.message|split("\n")[0]|rtrimstr("\r"))] | @tsv'
     if ($Base) {
         $rows = @(& gh api "repos/$Repository/compare/$Base...$Head" --paginate --jq ".commits[] | $filter" 2>$null)
     } else {
@@ -83,7 +83,7 @@ function Get-CommitsFromGit {
         if ($parts.Count -lt 3) { continue }
         $commits += [pscustomobject]@{
             Sha     = $parts[0]
-            Subject = $parts[2]
+            Subject = $parts[2].TrimEnd("`r")
             Login   = ''
             Name    = $parts[1]
         }
