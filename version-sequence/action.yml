@@ -8,7 +8,7 @@ inputs:
   prerelease-suffix:
     description: >-
       Regex for the part after the hyphen in a prerelease tag, without the hyphen.
-      Controls both what counts as a valid tag and which same-day tags count toward the next revision.
+      Only decides which tags are valid. Every same-day tag counts toward the next revision, whatever its suffix.
     required: false
     default: '[A-Za-z0-9]{4}'
   repo-root:

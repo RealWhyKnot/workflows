@@ -80,19 +80,23 @@ try {
     New-Commit 'yet more'
     Assert-Plan 'an existing beta counts toward the next revision' @{ NowUtc = $noon } @{ next_tag = 'v2026.9.8.2-beta' }
 
-    Assert-Plan 'a different suffix ignores same-day tags carrying the old one' @{ NowUtc = $noon; Suffix = 'nightly' } @{ next_tag = 'v2026.9.8.0-nightly' }
-    Assert-Plan 'an empty suffix only counts plain same-day tags' @{ NowUtc = $noon; Suffix = '' } @{ next_tag = 'v2026.9.8.0' }
+    Assert-Plan 'a different suffix still counts same-day tags carrying the old one' @{ NowUtc = $noon; Suffix = 'nightly' } @{ next_tag = 'v2026.9.8.2-nightly' }
+    Assert-Plan 'an empty suffix counts same-day betas too' @{ NowUtc = $noon; Suffix = '' } @{ next_tag = 'v2026.9.8.2' }
 
-    Invoke-Git @('tag', 'v2026.9.8.0')
+    Invoke-Git @('tag', 'v2026.9.8.2')
     New-Commit 'plain tag exists now'
-    Assert-Plan 'a plain same-day tag counts under an empty suffix' @{ NowUtc = $noon; Suffix = '' } @{ next_tag = 'v2026.9.8.1' }
-    Assert-Plan 'a plain same-day tag also counts under the beta suffix' @{ NowUtc = $noon } @{ next_tag = 'v2026.9.8.2-beta' }
+    Assert-Plan 'a plain same-day tag counts under an empty suffix' @{ NowUtc = $noon; Suffix = '' } @{ next_tag = 'v2026.9.8.3' }
+    Assert-Plan 'a plain same-day tag also counts under the beta suffix' @{ NowUtc = $noon } @{ next_tag = 'v2026.9.8.3-beta' }
 
-    Invoke-Git @('tag', 'v2026.9.8.2-beta')
+    Invoke-Git @('tag', 'v2026.9.8.3-a1b2')
+    New-Commit 'hex prerelease exists now'
+    Assert-Plan 'a hex prerelease counts under the beta suffix' @{ NowUtc = $noon } @{ next_tag = 'v2026.9.8.4-beta' }
+
+    Invoke-Git @('tag', 'v2026.9.8.4-beta')
     New-Commit 'bump the stamp' 'chore' 'version.txt'
     New-Commit 'reword the readme' 'fix' 'README.md'
     Assert-Plan 'commits the beta gate rejects mean nothing to do' @{ NowUtc = $noon } @{ has_changes = 'false'; next_tag = '' }
-    Assert-Plan 'release-types passes through to the gate' @{ NowUtc = $noon; ReleaseTypes = 'chore' } @{ has_changes = 'true'; next_tag = 'v2026.9.8.3-beta' }
+    Assert-Plan 'release-types passes through to the gate' @{ NowUtc = $noon; ReleaseTypes = 'chore' } @{ has_changes = 'true'; next_tag = 'v2026.9.8.5-beta' }
 }
 finally {
     Pop-Location -ErrorAction SilentlyContinue

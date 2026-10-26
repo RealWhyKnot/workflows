@@ -13,9 +13,9 @@ Set-StrictMode -Version Latest
 $suffix = if ($PrereleaseSuffix) { "(-(?:$PrereleaseSuffix))?" } else { '' }
 
 function Get-ExpectedRevision {
-    param([string] $DateStamp, [string] $ExcludeTag, [string] $Suffix)
+    param([string] $DateStamp, [string] $ExcludeTag)
 
-    $pattern = "^v$([regex]::Escape($DateStamp))\.(\d+)$Suffix$"
+    $pattern = "^v$([regex]::Escape($DateStamp))\.(\d+)(-.+)?$"
     $highest = -1
     $tags = @(& git tag --list "v$DateStamp.*")
     if ($LASTEXITCODE -ne 0) { throw "git tag --list failed with exit code $LASTEXITCODE" }
@@ -39,7 +39,7 @@ try {
 
     $dateStamp = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
     $actual = [int] $Matches[4]
-    $expected = Get-ExpectedRevision -DateStamp $dateStamp -ExcludeTag $Tag -Suffix $suffix
+    $expected = Get-ExpectedRevision -DateStamp $dateStamp -ExcludeTag $Tag
 
     if ($actual -ne $expected) {
         Write-Host "::error::Release tag $Tag uses revision $actual, expected $expected for $dateStamp. Use .0 when no same-day tag exists; otherwise increment the highest same-day release or prerelease revision by one."

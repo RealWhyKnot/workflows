@@ -34,7 +34,7 @@ $zone = [TimeZoneInfo]::FindSystemTimeZoneById($Timezone)
 $today = [TimeZoneInfo]::ConvertTimeFromUtc($NowUtc, $zone).ToString('yyyy.M.d')
 
 $escaped = [regex]::Escape($today)
-$pattern = if ($Suffix) { "^v$escaped\.(\d+)(-(?:$Suffix))?$" } else { "^v$escaped\.(\d+)$" }
+$pattern = "^v$escaped\.(\d+)(-.+)?$"
 $highest = -1
 foreach ($existing in @(& git tag --list "v$today.*")) {
     if ($existing -match $pattern -and [int] $Matches[1] -gt $highest) { $highest = [int] $Matches[1] }

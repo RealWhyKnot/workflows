@@ -57,7 +57,8 @@ try {
 
     Invoke-Git @('tag', 'v2026.9.8.1-A1B2')
     Assert-Result 'a hex prerelease counts toward the next revision' @{ Tag = 'v2026.9.8.2' } $true
-    Assert-Result 'the hex prerelease is skipped under a beta-only suffix' @{ Tag = 'v2026.9.8.1'; PrereleaseSuffix = 'beta' } $true
+    Assert-Result 'the hex prerelease still counts under a beta-only suffix' @{ Tag = 'v2026.9.8.2'; PrereleaseSuffix = 'beta' } $true
+    Assert-Result 'a beta-only suffix cannot reuse the hex prerelease revision' @{ Tag = 'v2026.9.8.1'; PrereleaseSuffix = 'beta' } $false 'expected 2'
 
     Invoke-Git @('tag', 'v2026.9.8.2-beta')
     Assert-Result 'a beta counts under the default suffix' @{ Tag = 'v2026.9.8.3' } $true
