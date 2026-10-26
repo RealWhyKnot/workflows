@@ -16,7 +16,8 @@ param(
     [int] $VerifyAttempts = 6,
     [int] $VerifyDelaySeconds = 2,
     [switch] $DryRun,
-    [switch] $AssumeExisting
+    [switch] $AssumeExisting,
+    [switch] $AssumeDraft
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,60 +42,7 @@ function Invoke-Gh {
     return $output
 }
 
-$lookupArgs = @('release', 'view', $Tag, '--json', 'id')
-if ($Repository) { $lookupArgs += @('--repo', $Repository) }
-$existing = [bool] $AssumeExisting
-if ($DryRun) {
-    Write-Host "gh $($lookupArgs -join ' ')"
-} else {
-    $global:LASTEXITCODE = 0
-    $found = & gh @lookupArgs 2>$null
-    $existing = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($found)
-    $global:LASTEXITCODE = 0
-}
-
-if ($DeleteExisting -and $existing) {
-    if ($DryRun) {
-        Write-Host "gh release delete $Tag --yes"
-    } else {
-        & gh release delete $Tag --yes
-        if ($LASTEXITCODE -ne 0) { throw "Could not delete the existing release $Tag." }
-        Write-Host "Deleted the existing release $Tag."
-    }
-    $existing = $false
-}
-
-if ($existing) {
-    $editArgs = @('release', 'edit', $Tag)
-    if ($Repository) { $editArgs += @('--repo', $Repository) }
-    $editArgs += @('--title', $Title)
-    if ($NotesFile)  { $editArgs += @('--notes-file', $NotesFile) }
-    if ($Prerelease) { $editArgs += @('--prerelease', '--latest=false') }
-    Invoke-Gh -Arguments $editArgs | Out-Null
-    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
-
-    if ($assetList.Count -gt 0) {
-        $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber')
-        if ($Repository) { $uploadArgs += @('--repo', $Repository) }
-        Invoke-Gh -Arguments $uploadArgs | Out-Null
-        if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
-    }
-    Write-Host "Updated the existing release $Tag."
-}
-else {
-
-$createArgs = @('release', 'create', $Tag) + $assetList
-if ($Repository) { $createArgs += @('--repo', $Repository) }
-if ($Target)     { $createArgs += @('--target', $Target) }
-$createArgs += @('--title', $Title)
-if ($NotesFile)  { $createArgs += @('--notes-file', $NotesFile) }
-if ($DraftFirst) { $createArgs += '--draft' }
-if ($Prerelease) { $createArgs += @('--prerelease', '--latest=false') }
-
-Invoke-Gh -Arguments $createArgs | Out-Null
-if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
-
-if ($DraftFirst) {
+function Publish-Draft {
     $viewArgs = @('release', 'view', $Tag, '--json', 'assets,isDraft')
     if ($Repository) { $viewArgs += @('--repo', $Repository) }
     if ($DryRun) {
@@ -116,6 +64,66 @@ if ($DraftFirst) {
     Invoke-Gh -Arguments $editArgs | Out-Null
     if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit --draft=false failed ($LASTEXITCODE)" }
 }
+
+$lookupArgs = @('release', 'view', $Tag, '--json', 'id,isDraft')
+if ($Repository) { $lookupArgs += @('--repo', $Repository) }
+$existing = [bool] $AssumeExisting
+$existingDraft = [bool] $AssumeDraft
+if ($DryRun) {
+    Write-Host "gh $($lookupArgs -join ' ')"
+} else {
+    $global:LASTEXITCODE = 0
+    $found = & gh @lookupArgs 2>$null
+    $existing = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($found)
+    if ($existing) { $existingDraft = [bool] ($found | ConvertFrom-Json).isDraft }
+    $global:LASTEXITCODE = 0
+}
+
+if ($DeleteExisting -and $existing) {
+    $deleteArgs = @('release', 'delete', $Tag, '--yes')
+    if ($Repository) { $deleteArgs += @('--repo', $Repository) }
+    if ($DryRun) {
+        Write-Host "gh $($deleteArgs -join ' ')"
+    } else {
+        & gh @deleteArgs
+        if ($LASTEXITCODE -ne 0) { throw "Could not delete the existing release $Tag." }
+        Write-Host "Deleted the existing release $Tag."
+    }
+    $existing = $false
+}
+
+if ($existing) {
+    $editArgs = @('release', 'edit', $Tag)
+    if ($Repository) { $editArgs += @('--repo', $Repository) }
+    $editArgs += @('--title', $Title)
+    if ($NotesFile)  { $editArgs += @('--notes-file', $NotesFile) }
+    if ($Prerelease) { $editArgs += @('--prerelease', '--latest=false') }
+    Invoke-Gh -Arguments $editArgs | Out-Null
+    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
+
+    if ($assetList.Count -gt 0) {
+        $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber')
+        if ($Repository) { $uploadArgs += @('--repo', $Repository) }
+        Invoke-Gh -Arguments $uploadArgs | Out-Null
+        if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
+    }
+    if ($existingDraft) { Publish-Draft }
+    Write-Host "Updated the existing release $Tag."
+}
+else {
+
+$createArgs = @('release', 'create', $Tag) + $assetList
+if ($Repository) { $createArgs += @('--repo', $Repository) }
+if ($Target)     { $createArgs += @('--target', $Target) }
+$createArgs += @('--title', $Title)
+if ($NotesFile)  { $createArgs += @('--notes-file', $NotesFile) }
+if ($DraftFirst) { $createArgs += '--draft' }
+if ($Prerelease) { $createArgs += @('--prerelease', '--latest=false') }
+
+Invoke-Gh -Arguments $createArgs | Out-Null
+if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+
+if ($DraftFirst) { Publish-Draft }
 
 }
 

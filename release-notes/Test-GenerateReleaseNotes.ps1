@@ -128,7 +128,133 @@ try {
     Assert-NotContains $api '\r' 'no escaped carriage return reaches the notes from the API'
     Assert-NotContains $api '(2026.10.9.0-1528)' 'no build stamp survives in API notes'
 
-    $extra = & $generator -Tag v2026.1.2.0 -Repository '' -Extra '## Downloads', '- a file' | Out-String
+    $unicode = "caf$([char]0xE9) menu $([char]0x2014) SteamVR$([char]0x2019)s $([char]0x30C8)$([char]0x30E9)$([char]0x30C3)$([char]0x30AB)$([char]0x30FC)"
+    New-Commit "feat: $unicode"
+    git tag v2026.1.5.0
+    $consoleEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.Encoding]::Latin1
+    try {
+        $unicodeOut = Join-Path $sandbox 'unicode-notes.md'
+        & $generator -Tag v2026.1.5.0 -Repository '' -OutFile $unicodeOut | Out-Null
+    } finally {
+        $latin1Kept = [Console]::OutputEncoding.WebName
+        [Console]::OutputEncoding = $consoleEncoding
+    }
+    Assert-Contains ([System.IO.File]::ReadAllText($unicodeOut)) "- feat: $unicode by Test Person in" 'a non-ASCII subject from git survives a console that is not UTF-8'
+    Assert-Equal $latin1Kept 'iso-8859-1' 'the caller''s console encoding is put back afterwards'
+
+    function ConvertTo-PageJson {
+        param([object[]] $Commits, [switch] $Compare)
+        if ($Compare) { return (@{ commits = $Commits } | ConvertTo-Json -Depth 6 -Compress) }
+        return (ConvertTo-Json -InputObject $Commits -Depth 6 -Compress)
+    }
+    function New-ApiCommit {
+        param([string] $Sha, [string] $Message)
+        @{ sha = $Sha.PadRight(40, '0'); author = @{ login = 'RealWhyKnot' }; commit = @{ author = @{ name = 'WhyKnot' }; message = $Message }; parents = @(@{}) }
+    }
+    $pageOne = @(New-ApiCommit 'aaaaaaa1' "fix: page one $unicode")
+    $pageTwo = @(New-ApiCommit 'bbbbbbb2' 'feat: page two')
+    $global:ghPages = @{
+        compare = @((ConvertTo-PageJson $pageOne -Compare), (ConvertTo-PageJson $pageTwo -Compare))
+        list    = @((ConvertTo-PageJson $pageOne), (ConvertTo-PageJson $pageTwo))
+    }
+    $global:ghArgs = @()
+    function gh {
+        $global:ghArgs += , @($args)
+        $query = $args[[array]::IndexOf($args, '--jq') + 1]
+        $pages = if ("$($args[1])" -match '/compare/') { $global:ghPages.compare } else { $global:ghPages.list }
+        if ($args -notcontains '--paginate') { $pages = @($pages[0]) }
+        foreach ($page in $pages) { $page | jq -r $query }
+    }
+    [Console]::OutputEncoding = [System.Text.Encoding]::Latin1
+    try {
+        $compareOut = Join-Path $sandbox 'compare-notes.md'
+        & $generator -Tag v2026.1.5.0 -PreviousTag v2026.1.4.0 -Repository 'RealWhyKnot/sample' -OutFile $compareOut | Out-Null
+        $firstOut = Join-Path $sandbox 'first-notes.md'
+        & $generator -Tag v2026.1.1.0 -Repository 'RealWhyKnot/sample' -OutFile $firstOut | Out-Null
+    } finally {
+        [Console]::OutputEncoding = $consoleEncoding
+        Remove-Item function:gh
+    }
+    $listCalls = @($global:ghArgs | Where-Object { "$($_[1])" -match '/commits\?' })
+    Remove-Variable -Scope Global -Name ghPages, ghArgs
+    $compareNotes = [System.IO.File]::ReadAllText($compareOut)
+    $firstNotes = [System.IO.File]::ReadAllText($firstOut)
+    Assert-Contains $compareNotes "- fix: page one $unicode by" 'a non-ASCII subject from the API survives a console that is not UTF-8'
+    Assert-Contains $compareNotes '- feat: page two by' 'the compare reads every page'
+    Assert-Equal "$($listCalls.Count)" '1' 'a first release lists commits through the API'
+    Assert-Contains $firstNotes '- feat: page two by' 'a first release reads every page of the commit list'
+    Assert-Contains $firstNotes "- fix: page one $unicode by" 'a first release keeps non-ASCII subjects'
+
+    New-Commit 'diag: log the tracker state on start'
+    New-Commit 'style: reformat the settings window'
+    git tag v2026.1.6.0
+    $kinds = & $generator -Tag v2026.1.6.0 -Repository '' | Out-String
+    Assert-Contains $kinds "### Changes`n- diag: log the tracker state on start" 'diag lands in Changes'
+    Assert-Contains $kinds "### Chores`n- style: reformat the settings window" 'style lands in Chores'
+    Assert-NotContains $kinds '### Other' 'diag and style no longer fall through to Other'
+
+    function Invoke-ReleaseNotesAction {
+        param([hashtable] $With, [string] $Temp)
+        $yaml = [System.IO.File]::ReadAllLines((Join-Path $PSScriptRoot 'action.yml'))
+        $runAt = [array]::IndexOf($yaml, '      run: |')
+        $envAt = [array]::IndexOf($yaml, '      env:')
+        $expand = {
+            param([string] $Text)
+            [regex]::Replace($Text, '\$\{\{\s*([^}]+?)\s*\}\}', {
+                param($m)
+                $key = $m.Groups[1].Value
+                if ($key -match '^inputs\.(.+)$') { return "$($With[$Matches[1]])" }
+                if ($key -eq 'github.action_path') { return $PSScriptRoot }
+                if ($key -eq 'runner.temp') { return $Temp }
+                return ''
+            })
+        }
+        $stepEnv = @{ GITHUB_OUTPUT = (Join-Path $Temp 'github-output') }
+        for ($i = $envAt + 1; $i -lt $runAt -and $yaml[$i] -match '^        ([A-Z_]+): (.*)$'; $i++) {
+            $stepEnv[$Matches[1]] = & $expand $Matches[2]
+        }
+        $script = New-Object System.Collections.Generic.List[string]
+        $script.Add('$ErrorActionPreference = ''stop''')
+        for ($i = $runAt + 1; $i -lt $yaml.Count -and ($yaml[$i] -eq '' -or $yaml[$i].StartsWith('        ')); $i++) {
+            $script.Add((& $expand ($yaml[$i] -replace '^ {8}', '')))
+        }
+        $script.Add('if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }')
+        $scriptPath = Join-Path $Temp 'step.ps1'
+        [System.IO.File]::WriteAllText($scriptPath, ($script -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
+        $saved = @{}
+        foreach ($k in $stepEnv.Keys) {
+            $saved[$k] = [Environment]::GetEnvironmentVariable($k)
+            [Environment]::SetEnvironmentVariable($k, $stepEnv[$k])
+        }
+        try {
+            & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command ". '$scriptPath'" *> (Join-Path $Temp 'step.log')
+            return $LASTEXITCODE
+        } finally {
+            foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
+        }
+    }
+
+    $actionTemp = Join-Path $sandbox 'action-temp'
+    New-Item -ItemType Directory -Force $actionTemp | Out-Null
+    $marker = Join-Path $sandbox 'injected'
+    $actionTitle = "TrackDoctor's $unicode"
+    $actionExtra = "## Download`n`nNeeds SteamVR's driver folder. $unicode`n`n`$(New-Item -ItemType File '$marker')"
+    $code = Invoke-ReleaseNotesAction -Temp $actionTemp -With @{ tag = 'v2026.1.6.0'; repository = ''; 'previous-tag' = ''; title = $actionTitle; extra = $actionExtra }
+    $actionNotesPath = Join-Path $actionTemp 'release-notes.md'
+    Assert-Equal "$code" '0' 'the action step runs with apostrophes and non-ASCII text in title and extra'
+    $actionNotes = if (Test-Path $actionNotesPath) { [System.IO.File]::ReadAllText($actionNotesPath) } else { '' }
+    Assert-Contains $actionNotes "# $actionTitle" 'the title reaches the notes unchanged'
+    Assert-Contains $actionNotes "Needs SteamVR's driver folder. $unicode" 'the extra block reaches the notes unchanged'
+    Assert-Contains $actionNotes '$(New-Item' 'a subexpression in extra stays literal text'
+    $injectedTitle = "x'`$(New-Item -ItemType File '$marker')'"
+    Remove-Item -LiteralPath $actionNotesPath -ErrorAction SilentlyContinue
+    Invoke-ReleaseNotesAction -Temp $actionTemp -With @{ tag = 'v2026.1.6.0'; repository = ''; 'previous-tag' = ''; title = $injectedTitle; extra = '' } | Out-Null
+    Assert-Equal "$(Test-Path $marker)" 'False' 'quotes in an input cannot run code in the step'
+    $injectedNotes = if (Test-Path $actionNotesPath) { [System.IO.File]::ReadAllText($actionNotesPath) } else { '' }
+    Assert-Contains $injectedNotes "# $injectedTitle" 'a quoted input reaches the notes as plain text'
+
+    $extra =& $generator -Tag v2026.1.2.0 -Repository '' -Extra '## Downloads', '- a file' | Out-String
     Assert-Contains $extra '## Downloads' 'extra markdown is appended'
 
     $out = Join-Path $sandbox 'notes.md'

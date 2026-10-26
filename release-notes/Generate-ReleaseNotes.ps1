@@ -19,11 +19,13 @@ $Categories = @(
     @{ Prefix = 'perf';     Name = 'Performance' }
     @{ Prefix = 'refactor'; Name = 'Changes' }
     @{ Prefix = 'revert';   Name = 'Changes' }
+    @{ Prefix = 'diag';     Name = 'Changes' }
     @{ Prefix = 'docs';     Name = 'Documentation' }
     @{ Prefix = 'build';    Name = 'Build' }
     @{ Prefix = 'ci';       Name = 'CI' }
     @{ Prefix = 'test';     Name = 'Tests' }
     @{ Prefix = 'chore';    Name = 'Chores' }
+    @{ Prefix = 'style';    Name = 'Chores' }
 )
 $Order = @('Breaking Changes', 'Features', 'Bug Fixes', 'Performance', 'Changes', 'Documentation', 'Build', 'CI', 'Tests', 'Chores', 'Other')
 $StampPattern = '\s*\(\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}|beta))?\)\s*$'
@@ -51,7 +53,7 @@ function Get-CommitsFromApi {
     if ($Base) {
         $rows = @(& gh api "repos/$Repository/compare/$Base...$Head" --paginate --jq ".commits[] | $filter" 2>$null)
     } else {
-        $rows = @(& gh api "repos/$Repository/commits?sha=$Head&per_page=100" --jq ".[] | $filter" 2>$null)
+        $rows = @(& gh api "repos/$Repository/commits?sha=$Head&per_page=100" --paginate --jq ".[] | $filter" 2>$null)
     }
     if ($LASTEXITCODE -ne 0 -or $rows.Count -eq 0) { return $null }
     $commits = @()
@@ -106,9 +108,15 @@ function Get-Category {
 $previous = $PreviousTag
 if (-not $previous) { $previous = Resolve-PreviousTag -Tag $Tag }
 
-$commits = $null
-if ($Repository) { $commits = Get-CommitsFromApi -Repository $Repository -Base $previous -Head $Tag }
-if ($null -eq $commits) { $commits = Get-CommitsFromGit -Base $previous -Head $Tag }
+$consoleEncoding = [Console]::OutputEncoding
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+try {
+    $commits = $null
+    if ($Repository) { $commits = Get-CommitsFromApi -Repository $Repository -Base $previous -Head $Tag }
+    if ($null -eq $commits) { $commits = Get-CommitsFromGit -Base $previous -Head $Tag }
+} finally {
+    [Console]::OutputEncoding = $consoleEncoding
+}
 
 $buckets = [ordered]@{}
 foreach ($name in $Order) { $buckets[$name] = New-Object System.Collections.Generic.List[string] }

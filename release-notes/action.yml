@@ -35,17 +35,21 @@ runs:
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+        REPOSITORY: ${{ inputs.repository }}
+        PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        TITLE: ${{ inputs.title }}
+        EXTRA: ${{ inputs.extra }}
       run: |
-        $repository = '${{ inputs.repository }}'
-        if (-not $repository) { $repository = '${{ github.repository }}' }
+        $repository = if ($env:REPOSITORY) { $env:REPOSITORY } else { '${{ github.repository }}' }
         $out = Join-Path '${{ runner.temp }}' 'release-notes.md'
         $global:LASTEXITCODE = 0
         & '${{ github.action_path }}/Generate-ReleaseNotes.ps1' `
-          -Tag '${{ inputs.tag }}' `
+          -Tag "$env:TAG" `
           -Repository $repository `
-          -PreviousTag '${{ inputs.previous-tag }}' `
-          -Title '${{ inputs.title }}' `
-          -Extra '${{ inputs.extra }}' `
+          -PreviousTag "$env:PREVIOUS_TAG" `
+          -Title "$env:TITLE" `
+          -Extra "$env:EXTRA" `
           -OutFile $out
         if ($LASTEXITCODE -ne 0) { throw "release notes generation failed ($LASTEXITCODE)" }
         "file=$out" >> $env:GITHUB_OUTPUT

@@ -97,6 +97,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          gh workflow run wiki-sync.yml --ref "${{ github.ref_name }}" ||
+          gh workflow run wiki-sync.yml --ref "$REF_NAME" ||
             echo "::warning::Could not trigger wiki-sync; the next wiki push will pick it up."

@@ -132,8 +132,8 @@ CalVer build stamp like `(2026.9.7.1-A528)` is stripped from the subject.
 
 Authors are resolved to their GitHub logins through the commits API, which credits outside
 contributors correctly. If the API can't be reached, it falls back to `git log` and the raw commit
-author name. The same happens for a first release with nothing to diff against. The API call needs
-`GH_TOKEN`, and the action passes `github.token` for you.
+author name. A first release lists every commit up to the tag. The API call needs `GH_TOKEN`, and
+the action passes `github.token` for you.
 
 Requires `fetch-depth: 0` and `fetch-tags: true` on the checkout, or there's no history to read.
 
@@ -230,9 +230,10 @@ match anything is skipped.
 
 `prerelease: true` adds `--prerelease --latest=false`. `draft-first: true` creates a draft, confirms
 every asset is attached, and only then publishes it. Use it when a failed upload would otherwise
-publish an empty release. `delete-existing: true` replaces an existing release for the tag. Give it
-`verify-asset` and `verify-sha256` together and it polls the API until the uploaded digest matches.
-An upload can report success before the asset is readable.
+publish an empty release. A re-run that finds a draft for the tag, like one a failed run left
+behind, checks its assets and publishes it the same way. `delete-existing: true` replaces an
+existing release for the tag. Give it `verify-asset` and `verify-sha256` together and it polls the
+API until the uploaded digest matches. An upload can report success before the asset is readable.
 
 Cleaning up a half-made release is left to your workflow, because it has to run on failure:
 

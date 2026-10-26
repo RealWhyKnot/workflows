@@ -87,10 +87,67 @@ Assert-Plan 'an existing release passes the repository to edit and upload' `
     ($base + @{ AssumeExisting = $true; Repository = 'o/r'; Assets = @('a.zip') }) `
     @('gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r')
 
+Assert-Plan 'the lookup asks whether the release is still a draft' $base `
+    @('gh release view v2026.9.8.0 --json id,isDraft')
+
+Assert-Plan 'an existing draft is checked and promoted on a re-run' `
+    ($base + @{ AssumeExisting = $true; AssumeDraft = $true; Assets = @('a.zip'); Repository = 'o/r' }) `
+    @('gh release upload v2026.9.8.0 a.zip --clobber --repo o/r', 'gh release view v2026.9.8.0 --json assets,isDraft --repo o/r', 'gh release edit v2026.9.8.0 --draft=false --repo o/r') `
+    @('gh release create')
+
+Assert-Plan 'an existing published release is not promoted again' `
+    ($base + @{ AssumeExisting = $true; DraftFirst = $true }) `
+    @('gh release edit v2026.9.8.0 --title') @('--draft=false', 'gh release create')
+
+$global:ghCalls = @()
+function gh {
+    $global:ghCalls += ($args -join ' ')
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'id,isDraft') { return '{"id":"RE_1","isDraft":true}' }
+    if ($args -contains 'assets,isDraft') { return '{"assets":[{"name":"a.zip"}],"isDraft":true}' }
+    return ''
+}
+try {
+    & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Assets @('a.zip') -DraftFirst $true *> $null
+    $rerun = $global:ghCalls -join "`n"
+} finally {
+    Remove-Item function:gh
+    Remove-Variable -Scope Global -Name ghCalls
+}
+if ($rerun -match [regex]::Escape('release edit v2026.9.8.0 --draft=false') -and $rerun -notmatch 'release create') {
+    Write-Host 'ok    a re-run finds the draft left by the last run and promotes it'
+} else {
+    Write-Host 'FAIL  a re-run finds the draft left by the last run and promotes it'; Write-Host "        $rerun"; $script:failures++
+}
+
 Assert-Plan 'delete-existing still creates rather than edits' `
     ($base + @{ AssumeExisting = $true; DeleteExisting = $true }) `
     @('gh release delete v2026.9.8.0 --yes', 'gh release create v2026.9.8.0') `
     @('gh release edit')
+
+Assert-Plan 'delete-existing deletes in the target repository' `
+    ($base + @{ AssumeExisting = $true; DeleteExisting = $true; Repository = 'o/r' }) `
+    @('gh release delete v2026.9.8.0 --yes --repo o/r', 'gh release create v2026.9.8.0 --repo o/r')
+
+$global:ghCalls = @()
+function gh {
+    $global:ghCalls += ($args -join ' ')
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'id,isDraft') { return '{"id":"RE_1","isDraft":false}' }
+    return ''
+}
+try {
+    & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Repository 'o/r' -DeleteExisting $true *> $null
+    $deleteCall = @($global:ghCalls | Where-Object { $_ -match '^release delete' })
+} finally {
+    Remove-Item function:gh
+    Remove-Variable -Scope Global -Name ghCalls
+}
+if ($deleteCall.Count -eq 1 -and $deleteCall[0] -eq 'release delete v2026.9.8.0 --yes --repo o/r') {
+    Write-Host 'ok    a real delete names the target repository'
+} else {
+    Write-Host 'FAIL  a real delete names the target repository'; Write-Host "        $($deleteCall -join ' | ')"; $script:failures++
+}
 
 Assert-Plan 'delete-existing checks for a release first' ($base + @{ DeleteExisting = $true }) `
     @('gh release view v2026.9.8.0 --json id')
