@@ -1,0 +1,61 @@
+name: Wait for CI
+description: Wait for the CI workflow to pass on a commit, and fail if it didn't. Commits without a run of their own fall back to the nearest first-parent ancestor that has one.
+
+inputs:
+  sha:
+    description: Commit to check. Defaults to the triggering commit.
+    required: false
+    default: ''
+  workflow:
+    description: Workflow file name whose runs count.
+    required: false
+    default: ci.yml
+  repository:
+    description: owner/name. Defaults to the calling repository.
+    required: false
+    default: ''
+  timeout-minutes:
+    description: How long to wait for a run that is still going.
+    required: false
+    default: '20'
+  grace-minutes:
+    description: How long a commit with no run yet gets before its ancestors are checked instead. Bot commits skip the wait.
+    required: false
+    default: '3'
+  max-depth:
+    description: How many first-parent ancestors to look through for a run.
+    required: false
+    default: '30'
+
+outputs:
+  sha:
+    description: The commit whose run passed.
+    value: ${{ steps.wait.outputs.sha }}
+  run-url:
+    description: Link to the passing run.
+    value: ${{ steps.wait.outputs.run-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for CI
+      id: wait
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SHA: ${{ inputs.sha || github.sha }}
+        WORKFLOW: ${{ inputs.workflow }}
+        REPOSITORY: ${{ inputs.repository || github.repository }}
+        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        GRACE_MINUTES: ${{ inputs.grace-minutes }}
+        MAX_DEPTH: ${{ inputs.max-depth }}
+      run: |
+        $global:LASTEXITCODE = 0
+        & '${{ github.action_path }}/Wait-ForCi.ps1' `
+          -Sha "$env:SHA" `
+          -Repository "$env:REPOSITORY" `
+          -Workflow "$env:WORKFLOW" `
+          -TimeoutMinutes ([int] $env:TIMEOUT_MINUTES) `
+          -GraceMinutes ([int] $env:GRACE_MINUTES) `
+          -MaxDepth ([int] $env:MAX_DEPTH)
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

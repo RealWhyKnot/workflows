@@ -118,6 +118,63 @@ jobs:
 "@
     Invoke-Git @('add', '-A')
     Assert-Result 'a reusable-workflow caller stub is accepted' $true
+
+    Set-File '.github/workflows/push.yml' @"
+name: Push
+jobs:
+  a:
+    steps:
+      - uses: actions/checkout@v7
+      - name: Push it
+        shell: bash
+        run: |
+          git push origin HEAD
+"@
+    Invoke-Git @('add', '-A')
+    Assert-Result 'a push without persist-credentials: false fails' $false 'persist-credentials'
+    Set-File '.github/workflows/push.yml' @"
+name: Push
+jobs:
+  a:
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Push it
+        shell: bash
+        run: |
+          git push origin HEAD
+"@
+    Invoke-Git @('add', '-A')
+    Assert-Result 'a push with persist-credentials: false passes' $true
+
+    Set-File '.github/workflows/stale.yml' @"
+name: Stale
+jobs:
+  a:
+    steps:
+      - name: Probe a tag
+        shell: pwsh
+        run: |
+          git rev-parse v1 2>`$null
+          if (`$LASTEXITCODE -eq 0) { Write-Host 'exists' }
+"@
+    Invoke-Git @('add', '-A')
+    Assert-Result 'a tolerated native failure without a reset fails' $false "step 'Probe a tag'"
+    Set-File '.github/workflows/stale.yml' @"
+name: Stale
+jobs:
+  a:
+    steps:
+      - name: Probe a tag
+        shell: pwsh
+        run: |
+          git rev-parse v1 2>`$null
+          if (`$LASTEXITCODE -eq 0) { Write-Host 'exists' }
+          `$global:LASTEXITCODE = 0
+"@
+    Invoke-Git @('add', '-A')
+    Assert-Result 'a tolerated native failure with a reset passes' $true
 }
 finally {
     Pop-Location -ErrorAction SilentlyContinue

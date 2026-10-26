@@ -19,7 +19,7 @@ on:
         required: false
         default: true
       prerelease-suffix:
-        description: Suffix regex the sequence check counts same-day tags with.
+        description: Suffix regex the sequence check accepts on the new tag.
         type: string
         required: false
         default: '[A-Za-z0-9]{4}'
@@ -38,6 +38,13 @@ on:
         type: string
         required: false
         default: ''
+      ci-workflow:
+        description: >-
+          Workflow file whose push run must pass on the commit before it is tagged, for example ci.yml.
+          Empty skips the check. The caller needs actions read permission.
+        type: string
+        required: false
+        default: ''
     outputs:
       tag:
         description: The tag that was pushed, empty when nothing changed.
@@ -47,7 +54,7 @@ jobs:
   tag:
     name: Tag a beta when main has functional changes
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: ${{ inputs.ci-workflow != '' && 30 || 5 }}
     outputs:
       tag: ${{ steps.plan.outputs.next_tag }}
     steps:
@@ -65,6 +72,12 @@ jobs:
           suffix: ${{ inputs.suffix }}
           ignore-paths: ${{ inputs.ignore-paths }}
           release-types: ${{ inputs.release-types }}
+
+      - name: Wait for CI
+        if: steps.plan.outputs.has_changes == 'true' && inputs.ci-workflow != ''
+        uses: RealWhyKnot/workflows/wait-for-ci@v1
+        with:
+          workflow: ${{ inputs.ci-workflow }}
 
       - name: Check the version sequence
         if: steps.plan.outputs.has_changes == 'true' && inputs.assert-sequence

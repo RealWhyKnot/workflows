@@ -1,0 +1,21 @@
+name: Set up NSIS
+description: Make sure the runner has the given NSIS version and put makensis on PATH. Windows only.
+
+inputs:
+  version:
+    description: NSIS version, major.minor.
+    required: false
+    default: '3.12'
+
+runs:
+  using: composite
+  steps:
+    - name: Install NSIS
+      shell: pwsh
+      env:
+        NSIS_VERSION: ${{ inputs.version }}
+      run: |
+        if ($env:RUNNER_OS -ne 'Windows') { throw 'setup-nsis only runs on Windows runners.' }
+        $global:LASTEXITCODE = 0
+        & '${{ github.action_path }}/Install-Nsis.ps1' -Version "$env:NSIS_VERSION"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

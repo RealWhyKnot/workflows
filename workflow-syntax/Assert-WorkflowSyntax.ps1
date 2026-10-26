@@ -35,6 +35,10 @@ $ghaPattern = [regex]'\$\{\{[^}]*\}\}'
 if (Test-Path -LiteralPath $workflowDir) {
     foreach ($file in @(Get-ChildItem -LiteralPath $workflowDir -File | Where-Object { $_.Extension -in '.yml', '.yaml' })) {
         $relativeWorkflow = [System.IO.Path]::GetRelativePath($Root, $file.FullName)
+        $workflowText = Get-Content -LiteralPath $file.FullName -Raw
+        if ($workflowText -match 'git push' -and $workflowText -notmatch 'persist-credentials:\s*false') {
+            $errors.Add("${relativeWorkflow}: pushes with git but never checks out with persist-credentials: false. Turn that off and push with an explicit token.") | Out-Null
+        }
         $lines = @(Get-Content -LiteralPath $file.FullName)
         $stepName = '<unnamed>'
         $isPwsh = $false
@@ -59,6 +63,13 @@ if (Test-Path -LiteralPath $workflowDir) {
             $parseErrors = $null
             [void][System.Management.Automation.Language.Parser]::ParseInput($stubbed, [ref]$null, [ref]$parseErrors)
             Add-ParseErrors -Source "$relativeWorkflow step '$stepName' run block starting line $runStart" -ParseErrors $parseErrors
+
+            $suppresses = $body -match '2>\$null'
+            $tolerates = $body -match '\$LASTEXITCODE\s+-eq\s+0'
+            $resets = $body -match '\$global:LASTEXITCODE\s*=\s*0'
+            if ($suppresses -and $tolerates -and -not $resets) {
+                $errors.Add("$relativeWorkflow step '$stepName' run block starting line ${runStart}: lets a native command fail without setting `$global:LASTEXITCODE = 0, so the step exits with the stale code.") | Out-Null
+            }
         }
 
         for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -98,9 +109,9 @@ if (Test-Path -LiteralPath $workflowDir) {
 }
 
 if ($errors.Count -gt 0) {
-    Write-Host '::error::PowerShell syntax errors:'
+    Write-Host '::error::Workflow and PowerShell problems:'
     foreach ($err in $errors) { Write-Host "  $err" }
-    Write-Host "::error::Found $($errors.Count) PowerShell syntax error(s)."
+    Write-Host "::error::Found $($errors.Count) problem(s)."
     exit 1
 }
 

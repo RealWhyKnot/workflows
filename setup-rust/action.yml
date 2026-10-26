@@ -1,0 +1,64 @@
+name: Set up Rust
+description: Install a Rust toolchain with rustup and cache cargo. Reads rust-toolchain.toml when no toolchain is given.
+
+inputs:
+  toolchain:
+    description: Toolchain to install. Empty reads rust-toolchain.toml in working-directory, then falls back to stable.
+    required: false
+    default: ''
+  components:
+    description: Extra components, comma or newline separated, for example rustfmt, clippy.
+    required: false
+    default: ''
+  targets:
+    description: Extra targets, comma or newline separated.
+    required: false
+    default: ''
+  working-directory:
+    description: Directory holding Cargo.lock and target.
+    required: false
+    default: '.'
+  cache:
+    description: Cache the cargo registry, git checkouts and target directory.
+    required: false
+    default: 'true'
+  cache-key:
+    description: Prefix for the cache key. Give jobs that build differently their own.
+    required: false
+    default: cargo
+
+outputs:
+  toolchain:
+    description: The toolchain that was installed.
+    value: ${{ steps.rust.outputs.toolchain }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      id: rust
+      shell: pwsh
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+        COMPONENTS: ${{ inputs.components }}
+        TARGETS: ${{ inputs.targets }}
+        WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        $global:LASTEXITCODE = 0
+        & '${{ github.action_path }}/Install-RustToolchain.ps1' `
+          -WorkingDirectory "$env:WORKDIR" `
+          -Toolchain "$env:TOOLCHAIN" `
+          -Components @("$env:COMPONENTS") `
+          -Targets @("$env:TARGETS")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Cache cargo
+      if: inputs.cache == 'true'
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ steps.rust.outputs.target-dir }}
+        key: ${{ inputs.cache-key }}-${{ runner.os }}-${{ steps.rust.outputs.toolchain }}-${{ steps.rust.outputs.lock-hash }}
+        restore-keys: ${{ inputs.cache-key }}-${{ runner.os }}-${{ steps.rust.outputs.toolchain }}-

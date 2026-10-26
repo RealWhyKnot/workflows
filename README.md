@@ -32,8 +32,9 @@ caller granted. It can't add to it, and a missing permission shows up as a 403 d
 | `version-guard.yml` | Fails if a `const string Version` reappears in `Editor/` or `Runtime/`. | `contents: read` |
 | `dependabot-automerge.yml` | Turns on auto-merge for Dependabot updates of an allowed type. | `contents: write`, `pull-requests: write` |
 | `changelog-append.yml` | Runs your `Update-Changelog.ps1` over the pushed range and commits the result back, signed. | `contents: write` |
-| `nightly-beta.yml` | Tags a beta when main has changes since the last tag that pass the beta gate. | `contents: write` |
+| `nightly-beta.yml` | Tags a beta when main has changes since the last tag that pass the beta gate. | `contents: write`, plus `actions: read` with `ci-workflow` |
 | `nightly-beta-scripted.yml` | Same, but your own planner script decides the tag. | `contents: write`, `actions: write` |
+| `repo-checks.yml` | Runs `workflow-syntax`, `conformance` and actionlint with shellcheck. I call it from every repo's CI so drift fails the build. | `contents: read` |
 
 `commit-msg-check.yml` inputs, all optional:
 
@@ -52,6 +53,9 @@ going to be a conventional commit. They're still counted for stamps.
 `README.md`). `version-guard.yml` takes `error-hint`, extra text for the failure message that tells
 people which pattern to use instead. `dependabot-automerge.yml` takes `update-types`
 (newline-separated, default `version-update:semver-patch`) and `merge-method` (default `rebase`).
+
+`repo-checks.yml` takes `pins` (default `warn`) and `ignore-ecosystems`, which go to `conformance`,
+and `actionlint` (default `true`).
 
 Dependabot gives its workflows a read-only token. Spell the write permissions above out on the
 calling job or the merge call fails.
@@ -199,16 +203,15 @@ Fails unless a CalVer tag uses the next free revision for its day.
     tag: ${{ steps.tag.outputs.tag }}
 ```
 
-A day starts at `.0`. After that each tag is one above the highest same-day tag, release or
-prerelease. The tag being checked is left out of the count, and re-running a release for a tag that
+A day starts at `.0`. After that each tag is one above the highest same-day tag, whatever its
+suffix. The tag being checked is left out of the count, and re-running a release for a tag that
 already exists still passes. Check out with `fetch-depth: 0` or the earlier tags aren't there to
 count.
 
 `prerelease-suffix` is a regex for the part after the hyphen. Its default `[A-Za-z0-9]{4}` accepts
-`-beta` and `-A1B2` but not `-rc.1`. The same pattern is used to validate the tag and to pick which
-same-day tags count. I pass `[A-Za-z0-9][A-Za-z0-9.-]*` in repos that use any suffix, but a wider
-pattern counts more tags and can change the revision it expects. Set `repo-root` to read tags from
-another checkout.
+`-beta` and `-A1B2` but not `-rc.1`. It only decides whether the tag itself is valid. I pass
+`[A-Za-z0-9][A-Za-z0-9.-]*` in repos that use any suffix. Set `repo-root` to read tags from another
+checkout.
 
 ## publish-release
 
@@ -311,6 +314,10 @@ The release job stays in your repo. `./` inside a shared workflow would resolve 
 not yours. If your `release.yml` only triggers on a tag push, set `dispatch-release: true` instead
 and drop the second job. A tag pushed with `GITHUB_TOKEN` never fires that trigger.
 
+Set `ci-workflow: ci.yml` to tag only after that workflow has passed on the commit. It runs
+`wait-for-ci`, so the calling job needs `actions: read` too. With it set, the job timeout goes from
+5 minutes to 30, or 45 for the scripted one.
+
 `nightly-beta-scripted.yml` works the same way for repos whose own planner decides the tag. It runs
 `.github/scripts/Get-NightlyBetaPlan.ps1`, expects `has_changes` and `next_tag` outputs from it, and
 ANDs the result with the beta gate.
@@ -364,14 +371,109 @@ Runs the beta gate, then picks the next same-day nightly tag. It's the planner i
 ```
 
 Outputs `has_changes` and `next_tag`, which is empty when the gate fails. The tag is
-`vYYYY.M.D.N-suffix`, with `N` one above the highest same-day tag that has no suffix or the same
-one. Tags with any other suffix are ignored. Like the gate, it needs `fetch-depth: 0`.
+`vYYYY.M.D.N-suffix`, with `N` one above the highest same-day tag of any suffix, so it always agrees
+with `version-sequence`. Like the gate, it needs `fetch-depth: 0`.
 
 | input | default | meaning |
 | --- | --- | --- |
 | `timezone` | `America/Chicago` | Whose calendar date goes in the tag. |
 | `suffix` | `beta` | Text after the hyphen. Empty gives a plain `vYYYY.M.D.N`. |
 | `tag-glob`, `ignore-paths`, `release-types` | as `beta-gate` | Passed through to the gate. |
+
+## wait-for-ci
+
+Waits for a workflow's push run to pass on a commit, and fails if it didn't. I put it in front of
+anything that tags or publishes, so a commit with red CI never ships.
+
+```yaml
+- uses: RealWhyKnot/workflows/wait-for-ci@v1
+  with:
+    workflow: ci.yml
+```
+
+A run that passed counts even if an earlier attempt failed. Pull request runs don't count. If a run
+is still going, it waits up to `timeout-minutes`.
+
+Some commits never get a run of their own: a push that only touched ignored paths, or a commit pushed
+with `GITHUB_TOKEN`, like the changelog bot's. For those it walks back the first-parent history and
+uses the nearest commit that has a run. A commit from a person gets `grace-minutes` first, in case
+its run hasn't started yet. Bot commits don't wait.
+
+Needs `actions: read`. Outputs `sha`, the commit whose run passed, and `run-url`.
+
+| input | default | meaning |
+| --- | --- | --- |
+| `sha` | the triggering commit | Commit to check. |
+| `workflow` | `ci.yml` | Workflow file whose runs count. |
+| `repository` | the calling repo | `owner/name`. |
+| `timeout-minutes` | `20` | How long to wait on a run that's still going. |
+| `grace-minutes` | `3` | How long a person's commit with no run gets before its ancestors are checked. |
+| `max-depth` | `30` | How many ancestors to look through. |
+
+## conformance
+
+Fails when a repo has drifted from the shared setup. It checks for:
+
+- a `RealWhyKnot/workflows` reference that isn't on `@v1`
+- a `.githooks/commit-msg` or `prepare-commit-msg` that differs from `hooks/`, ignoring line
+  endings (a hook the repo doesn't have is skipped)
+- no workflow calling `commit-msg-check.yml`, or a fork calling it without `forbidden-body-pattern`
+- no `.github/dependabot.yml`, an ecosystem the repo uses with no entry, or an entry with no
+  `commit-message` prefix
+
+The ecosystems come from tracked files. `Cargo.toml` means cargo, project files and
+`Directory.Packages.props` mean nuget, `package.json` means npm unless it's a Unity or VPM package,
+`requirements*.txt` and `pyproject.toml` mean pip, and `go.mod` means gomod. Any workflow means
+github-actions.
+
+A third-party action pinned to a branch, or to an older major than its latest release, gets a
+warning. `pins: fail` turns that into an error and `pins: off` skips the lookups. SHA pins and local
+actions are left alone.
+
+```yaml
+- uses: RealWhyKnot/workflows/conformance@v1
+```
+
+| input | default | meaning |
+| --- | --- | --- |
+| `shared-ref` | `v1` | The ref every shared reference must use. |
+| `pins` | `warn` | `warn`, `fail` or `off` for stale third-party pins. |
+| `ignore-ecosystems` | none | Newline-separated ecosystems the repo leaves out on purpose. |
+| `root` | the workspace | Repository to check. |
+
+## setup-rust
+
+Installs a toolchain with rustup's minimal profile, makes it the default, and caches the cargo
+registry, git checkouts and `target`.
+
+```yaml
+- uses: RealWhyKnot/workflows/setup-rust@v1
+  with:
+    components: rustfmt, clippy
+```
+
+With no `toolchain` it reads `channel`, `components` and `targets` from `rust-toolchain.toml` in
+`working-directory`, then falls back to `stable`. A version pinned in that file doesn't need
+repeating in the workflow. The cache key is the OS, the toolchain and a hash of `Cargo.lock`.
+
+| input | default | meaning |
+| --- | --- | --- |
+| `toolchain` | from the file, else `stable` | Toolchain to install. |
+| `components`, `targets` | none | Added to whatever the file lists. Comma or newline separated. |
+| `working-directory` | `.` | Where `Cargo.lock`, `rust-toolchain.toml` and `target` live. |
+| `cache` | `true` | Turn the cargo cache off. |
+| `cache-key` | `cargo` | Key prefix. Jobs that build different things should each get their own. |
+
+## setup-nsis
+
+Installs NSIS through Chocolatey unless `makensis /VERSION` already reports the version you asked
+for, then puts it on `PATH`. Windows only.
+
+```yaml
+- uses: RealWhyKnot/workflows/setup-nsis@v1
+  with:
+    version: '3.12'
+```
 
 ## hooks
 
@@ -402,12 +504,49 @@ Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body ch
 
 `pre-push` isn't shared because each repo runs its own linter from it.
 
+## Dependabot
+
+Every repo has a `.github/dependabot.yml`, and `conformance` checks that it covers what the repo
+uses. This is the layout I start from:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directory: /
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        update-types: [minor, patch]
+```
+
+Swap the second entry for whatever the repo builds with. The `chore` prefix passes the conventional
+subject check, and the beta gate doesn't count it, so a dependency bump on its own never tags a
+nightly. Schedules and limits can differ per repo. The check only looks at coverage and the prefix.
+
 ## Versioning
 
 Pin to `@v1`. That tag moves as fixes are released, and every repo picks them up without a bump.
-Pin to a full tag like `@v1.0.0` if you want a repo frozen.
+Pin to a full tag like `@v1.0.0` if you want a repo frozen, and set `shared-ref` to match or
+`conformance` will flag it.
 
 Because `v1` moves, CI here runs every `Test-*.ps1` in the repo on both ubuntu and windows, plus
-actionlint over the workflows, before I move the tag. `commits.yml` runs `commit-msg-check.yml` on
+actionlint, `workflow-syntax` and `conformance` over this repo, before I move the tag. `commits.yml` runs `commit-msg-check.yml` on
 this repo's own pushes and pull requests, with stamps off and conventional subjects required. It
 isn't meant to be called from other repos.

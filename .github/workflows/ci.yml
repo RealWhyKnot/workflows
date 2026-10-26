@@ -57,3 +57,15 @@ jobs:
         uses: raven-actions/actionlint@v2
         with:
           shellcheck: true
+
+      - name: Check this repo against itself
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK: ${{ github.event.repository.fork }}
+        run: |
+          $global:LASTEXITCODE = 0
+          & ./workflow-syntax/Assert-WorkflowSyntax.ps1 -Root .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./conformance/Assert-Conformance.ps1 -Root . -Fork "$env:FORK"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

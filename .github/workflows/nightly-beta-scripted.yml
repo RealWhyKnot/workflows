@@ -29,7 +29,7 @@ on:
         required: false
         default: true
       timeout-minutes:
-        description: Job timeout.
+        description: Job timeout. Raised to 45 when ci-workflow is set.
         type: number
         required: false
         default: 15
@@ -48,6 +48,13 @@ on:
         type: string
         required: false
         default: ''
+      ci-workflow:
+        description: >-
+          Workflow file whose push run must pass on the commit before it is tagged, for example ci.yml.
+          Empty skips the check. The caller needs actions read permission.
+        type: string
+        required: false
+        default: ''
     outputs:
       tag:
         description: The tag that was pushed, empty when nothing changed.
@@ -57,7 +64,7 @@ jobs:
   tag:
     name: Tag a beta when the release inputs changed
     runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
+    timeout-minutes: ${{ inputs.ci-workflow != '' && 45 || inputs.timeout-minutes }}
     outputs:
       tag: ${{ steps.gate.outputs.has_changes == 'true' && steps.plan.outputs.next_tag || '' }}
     steps:
@@ -101,6 +108,12 @@ jobs:
           tag-glob: ${{ inputs.tag-glob }}
           ignore-paths: ${{ inputs.ignore-paths }}
           release-types: ${{ inputs.release-types }}
+
+      - name: Wait for CI
+        if: steps.gate.outputs.has_changes == 'true' && inputs.ci-workflow != ''
+        uses: RealWhyKnot/workflows/wait-for-ci@v1
+        with:
+          workflow: ${{ inputs.ci-workflow }}
 
       - name: Report no changes
         if: steps.gate.outputs.has_changes != 'true'

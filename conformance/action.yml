@@ -1,0 +1,46 @@
+name: Conformance
+description: Fail when a repo drifts from the shared setup. Checks shared refs, the commit hooks, Dependabot coverage and the commit message check, and flags stale third-party action pins.
+
+inputs:
+  root:
+    description: Repository root to check. Defaults to the workspace.
+    required: false
+    default: ''
+  shared-ref:
+    description: The ref every RealWhyKnot/workflows reference must use.
+    required: false
+    default: v1
+  pins:
+    description: What an outdated or branch-pinned third-party action does. warn, fail or off.
+    required: false
+    default: warn
+  ignore-ecosystems:
+    description: Newline-separated Dependabot ecosystems this repo deliberately leaves out.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check conformance
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ROOT: ${{ inputs.root }}
+        SHARED_REF: ${{ inputs.shared-ref }}
+        PINS: ${{ inputs.pins }}
+        IGNORE_ECOSYSTEMS: ${{ inputs.ignore-ecosystems }}
+        FORK: ${{ github.event.repository.fork }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        $root = if ($env:ROOT) { $env:ROOT } else { '${{ github.workspace }}' }
+        $ignore = @($env:IGNORE_ECOSYSTEMS -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $global:LASTEXITCODE = 0
+        & '${{ github.action_path }}/Assert-Conformance.ps1' `
+          -Root $root `
+          -SharedRef "$env:SHARED_REF" `
+          -Fork "$env:FORK" `
+          -Repository "$env:REPOSITORY" `
+          -Pins "$env:PINS" `
+          -IgnoreEcosystems $ignore
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

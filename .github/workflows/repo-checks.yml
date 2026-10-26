@@ -1,0 +1,46 @@
+name: Repo checks
+
+on:
+  workflow_call:
+    inputs:
+      pins:
+        description: What an outdated or branch-pinned third-party action does. warn, fail or off.
+        type: string
+        required: false
+        default: warn
+      ignore-ecosystems:
+        description: Newline-separated Dependabot ecosystems this repo deliberately leaves out.
+        type: string
+        required: false
+        default: ''
+      actionlint:
+        description: Lint the workflows with actionlint and shellcheck.
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  checks:
+    name: Workflow syntax, conformance and actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Workflow syntax
+        uses: RealWhyKnot/workflows/workflow-syntax@v1
+
+      - name: Conformance
+        uses: RealWhyKnot/workflows/conformance@v1
+        with:
+          pins: ${{ inputs.pins }}
+          ignore-ecosystems: ${{ inputs.ignore-ecosystems }}
+
+      - name: actionlint
+        if: inputs.actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          shellcheck: true
