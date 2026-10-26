@@ -3,7 +3,7 @@ description: Install a Rust toolchain with rustup and cache cargo. Reads rust-to
 
 inputs:
   toolchain:
-    description: Toolchain to install. Empty reads rust-toolchain.toml in working-directory, then falls back to stable.
+    description: Toolchain to install. Empty reads rust-toolchain.toml from working-directory or a folder above it, then falls back to stable.
     required: false
     default: ''
   components:

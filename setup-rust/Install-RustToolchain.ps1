@@ -36,7 +36,13 @@ $fileComponents = @()
 $fileTargets = @()
 $source = 'input'
 if (-not $Toolchain) {
-    $file = @('rust-toolchain.toml', 'rust-toolchain') | ForEach-Object { Join-Path $dir $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    $file = $null
+    $search = $dir
+    while ($search -and -not $file) {
+        $file = @('rust-toolchain.toml', 'rust-toolchain') | ForEach-Object { Join-Path $search $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if ($file -or (Test-Path -LiteralPath (Join-Path $search '.git'))) { break }
+        $search = Split-Path -Parent $search
+    }
     if ($file) {
         $text = Get-Content -LiteralPath $file -Raw
         if ($text -match '(?m)^\s*channel\s*=\s*"([^"]+)"') { $Toolchain = $Matches[1] }

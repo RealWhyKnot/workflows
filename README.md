@@ -453,14 +453,15 @@ registry, git checkouts and `target`.
 ```
 
 With no `toolchain` it reads `channel`, `components` and `targets` from `rust-toolchain.toml` in
-`working-directory`, then falls back to `stable`. A version pinned in that file doesn't need
+`working-directory` or the nearest folder above it, up to the repo root, then falls back to
+`stable`. A version pinned in that file doesn't need
 repeating in the workflow. The cache key is the OS, the toolchain and a hash of `Cargo.lock`.
 
 | input | default | meaning |
 | --- | --- | --- |
 | `toolchain` | from the file, else `stable` | Toolchain to install. |
 | `components`, `targets` | none | Added to whatever the file lists. Comma or newline separated. |
-| `working-directory` | `.` | Where `Cargo.lock`, `rust-toolchain.toml` and `target` live. |
+| `working-directory` | `.` | Where `Cargo.lock` and `target` live, and where the search for `rust-toolchain.toml` starts. |
 | `cache` | `true` | Turn the cargo cache off. |
 | `cache-key` | `cargo` | Key prefix. Jobs that build different things should each get their own. |
 

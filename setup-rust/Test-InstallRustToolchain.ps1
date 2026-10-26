@@ -55,6 +55,8 @@ try {
     Assert-Install 'a legacy rust-toolchain file works' (Invoke-Install @{} @{ 'rust-toolchain' = "1.90.0`n" }) ($base -f '1.90.0') @{ toolchain = '1.90.0' }
     $locked = Invoke-Install @{ WorkingDirectory = 'bridge' } @{ 'bridge/Cargo.lock' = 'lock'; 'bridge/rust-toolchain.toml' = $file }
     Assert-Install 'a working directory finds its own file, lock and target' $locked (($base -f '1.99.1') + ' --component rustfmt,clippy') @{ 'target-dir' = 'bridge/target' }
+    Assert-Install 'a working directory falls back to the repo root file' (Invoke-Install @{ WorkingDirectory = 'bridge' } @{ '.git/HEAD' = 'ref'; 'rust-toolchain.toml' = $file; 'bridge/Cargo.toml' = '' }) (($base -f '1.99.1') + ' --component rustfmt,clippy') @{ toolchain = '1.99.1'; 'target-dir' = 'bridge/target' }
+    Assert-Install 'the search stops at the repo root' (Invoke-Install @{ WorkingDirectory = 'repo/bridge' } @{ 'rust-toolchain.toml' = $file; 'repo/.git/HEAD' = 'ref'; 'repo/bridge/Cargo.toml' = '' }) ($base -f 'stable') @{ toolchain = 'stable' }
     if ($locked.Out['lock-hash'] -notmatch '^[0-9a-f]{16}$') {
         Write-Host "FAIL  the lock file is hashed: got '$($locked.Out['lock-hash'])'"; $script:failures++
     }
