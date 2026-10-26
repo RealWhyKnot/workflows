@@ -43,4 +43,4 @@ else {
     if ($have -ne $want) { throw "Expected NSIS $want after installing, found '$have'." }
 }
 
-if ($PathFile) { Add-Content -LiteralPath $PathFile -Value (Split-Path -Parent $Exe) }
+if ($PathFile) { Add-Content -LiteralPath $PathFile -Value $Exe.Substring(0, $Exe.LastIndexOfAny([char[]]'\/')) }
