@@ -96,6 +96,27 @@ if ($bash) {
             Assert 'the git-dir version file supplies the stamp' ($subject -eq "docs: sample ($stamp)") "got '$subject'"
             Assert 'no root version.txt is created' (-not (Test-Path (Join-Path $repo 'version.txt')))
             Assert 'the private version file survives' (Test-Path $private)
+
+            & git commit --allow-empty --quiet -m 'base' 2>&1 | Out-Null
+            $prefix = (& git rev-parse HEAD).Trim().Substring(0, 4)
+            $sha1 = [System.Security.Cryptography.SHA1]::Create()
+            $n = 0
+            do {
+                $n++
+                $body = [System.Text.Encoding]::ASCII.GetBytes("$n")
+                $header = [System.Text.Encoding]::ASCII.GetBytes("blob $($body.Length)`0")
+                $hash = [System.BitConverter]::ToString($sha1.ComputeHash([byte[]]($header + $body))).Replace('-', '').ToLowerInvariant()
+            } until ($hash.StartsWith($prefix))
+            $twin = Join-Path $sandbox 'twin.txt'
+            [System.IO.File]::WriteAllText($twin, "$n")
+            & git hash-object -w $twin | Out-Null
+            Remove-Item -LiteralPath $private -Force
+            [System.IO.File]::WriteAllText($msg, "docs: fresh day`n")
+            & bash '.githooks/prepare-commit-msg' $msg 2>&1 | Out-Null
+            $subject = ([System.IO.File]::ReadAllText($msg) -split "`n")[0].Trim()
+            $head = (& git rev-parse HEAD).Trim().Substring(0, 4).ToUpperInvariant()
+            Assert 'a new day stamps exactly four hex digits of HEAD' ($subject -eq "docs: fresh day ($today.0-$head)") "got '$subject'"
+            Assert 'the new stamp matches the default pattern' ($subject -match $prepPattern) "got '$subject'"
         }
         finally { Pop-Location }
     }
