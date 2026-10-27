@@ -18,11 +18,6 @@ on:
         type: string
         required: false
         default: ./.github/scripts/Update-Changelog.ps1
-      trigger-wiki-sync:
-        description: Kick wiki-sync afterwards, for repos whose wiki mirrors a changelog.
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   append:
@@ -91,13 +86,3 @@ jobs:
           body: Maintained by the shared changelog-append workflow.
           branch: ${{ github.ref_name }}
           paths: ${{ inputs.changelog-paths }}
-
-      - name: Trigger the wiki sync
-        if: steps.append.outputs.changed == 'true' && inputs.trigger-wiki-sync
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          gh workflow run wiki-sync.yml --ref "$REF_NAME" ||
-            echo "::warning::Could not trigger wiki-sync; the next wiki push will pick it up."

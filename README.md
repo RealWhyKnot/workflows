@@ -28,7 +28,6 @@ caller granted. It can't add to it, and a missing permission shows up as a 403 d
 | workflow | what it does | needs |
 | --- | --- | --- |
 | `commit-msg-check.yml` | Rejects commit subjects with more than one CalVer build stamp, optionally also non-conventional subjects and bodies matching a forbidden pattern. | `contents: read` |
-| `wiki-sync.yml` | Mirrors `wiki/` into the repo's GitHub Wiki. Does nothing until the wiki has its first page. | `contents: write` |
 | `version-guard.yml` | Fails if a `const string Version` reappears in `Editor/` or `Runtime/`. | `contents: read` |
 | `dependabot-automerge.yml` | Turns on auto-merge for Dependabot updates of an allowed type. | `contents: write`, `pull-requests: write` |
 | `changelog-append.yml` | Runs your `Update-Changelog.ps1` over the pushed range and commits the result back, signed. | `contents: write` |
@@ -49,8 +48,7 @@ caller granted. It can't add to it, and a missing permission shows up as a 403 d
 Merge and revert subjects skip the conventional and body checks, because a merge subject is never
 going to be a conventional commit. They're still counted for stamps.
 
-`wiki-sync.yml` takes `source-dir` (default `wiki`) and `exclude` (newline-separated, default
-`README.md`). `version-guard.yml` takes `error-hint`, extra text for the failure message that tells
+`version-guard.yml` takes `error-hint`, extra text for the failure message that tells
 people which pattern to use instead. `dependabot-automerge.yml` takes `update-types`
 (newline-separated, default `version-update:semver-patch`) and `merge-method` (default `rebase`).
 
@@ -285,8 +283,7 @@ jobs:
 
 Keep the recursion guard on your own job. A commit made with `GITHUB_TOKEN` doesn't trigger
 workflows, but a manual re-run or a different actor can still loop. `changelog-paths` takes a
-newline-separated list for repos that also keep `wiki/Changelog.md`. `trigger-wiki-sync: true`
-starts the wiki sync afterwards, because the changelog commit won't fire the wiki's push trigger.
+newline-separated list for repos that keep more than one changelog.
 
 ## nightly-beta
 
