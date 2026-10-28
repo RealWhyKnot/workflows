@@ -69,3 +69,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./conformance/Assert-Conformance.ps1 -Root . -Fork "$env:FORK"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  powershell:
+    name: PowerShell style
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-PSResource -Name PSScriptAnalyzer -Version 1.25.0 -TrustRepository -Quiet
+
+      - name: Lint PowerShell
+        shell: pwsh
+        run: |
+          $global:LASTEXITCODE = 0
+          & ./lint/Install-Lint.ps1 -RepoRoot . -Lang powershell
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./Invoke-PSLint.ps1
+          exit $LASTEXITCODE
