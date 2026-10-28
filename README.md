@@ -502,6 +502,54 @@ Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body ch
 
 `pre-push` isn't shared because each repo runs its own linter from it.
 
+## lint
+
+`lint/<lang>/` holds my baseline formatter and linter configs, one folder per language. To copy them
+into a repo:
+
+```
+pwsh path/to/workflows/lint/Install-Lint.ps1 -RepoRoot .
+```
+
+With no `-Lang` it picks languages from the repo's tracked files, skipping vendored code. Pass
+`-Lang rust,csharp` to choose them yourself. Each file lands at the same relative path in the repo,
+and one that already exists and differs is left alone unless you pass `-Force`.
+
+`lint/common/` goes into every repo. `vendored-paths.txt` lists the code that keeps its upstream
+style: `name/` matches a folder with that name at any depth, and `/path/` matches from the repo root.
+It only holds generic names like `vendor/`. A repo lists its own upstream folders in
+`vendored-paths.local.txt` at its root, in the same format. Install-Lint adds those entries to the
+excludes in the files it installs (ruff, pyright, ESLint, Prettier, `.editorconfig` and its copy of
+`vendored-paths.txt`), and a rerun treats the result as current.
+
+`style_check.py` and the `style_*.py` modules beside it check what the linters can't: comments and
+inline suppressions in Rust, C# and Python, files over 600 lines in any language, committed
+generated C#, crates that don't inherit `[workspace.lints]`, and lint or format configs below the
+repo root or in project files. Each repo's gate runs it from the root with Python 3.11 or later.
+`-B` keeps it from leaving a `__pycache__` folder there:
+
+```
+python -B style_check.py
+```
+
+It also fails when `vendored-paths.local.txt` has an entry the installed `vendored-paths.txt`
+doesn't, since the other configs won't have it either until Install-Lint runs again. It exits 1 if
+it finds anything and 2 if it can't run, which includes a local entry in the wrong format.
+
+Files directly under `lint/<lang>/merge/` go inside a file the repo already has, such as the
+`[workspace.lints]` table in `Cargo.toml`. The script checks that file for every line or key and
+lists what's missing. A missing target is only a note unless the language's `install.psd1` names it
+with a `Merge` entry. Folders under `merge/` hold variants, which are used only when a rule picks
+one.
+
+An `install.psd1` in a language folder adjusts this per repo. A rule can swap in another file (Unity
+repos get `merge/unity/.editorconfig`) or skip one that doesn't apply, with a reason (Unity repos
+don't get the root `Directory.Build.props`). A rule that does neither is an old per-repo tweak, and
+the script tells you to remove it. When two languages ship `.editorconfig`, their sections go into one
+file, and a key they set differently is yours to settle. Any other file shipped by two languages is
+also left to you. If anything is left to do by hand, the script lists it and exits 1; otherwise it
+exits 0.
+
 ## Dependabot
 
 Every repo has a `.github/dependabot.yml`, and `conformance` checks that it covers what the repo
