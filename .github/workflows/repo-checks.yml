@@ -31,10 +31,10 @@ jobs:
           persist-credentials: false
 
       - name: Workflow syntax
-        uses: RealWhyKnot/workflows/workflow-syntax@v1
+        uses: RealWhyKnot/workflows/workflow-syntax@v2026.10.28.0
 
       - name: Conformance
-        uses: RealWhyKnot/workflows/conformance@v1
+        uses: RealWhyKnot/workflows/conformance@v2026.10.28.0
         with:
           pins: ${{ inputs.pins }}
           ignore-ecosystems: ${{ inputs.ignore-ecosystems }}

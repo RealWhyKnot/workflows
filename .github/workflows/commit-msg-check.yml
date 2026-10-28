@@ -41,7 +41,7 @@ jobs:
           fetch-depth: 0
 
       - name: Validate commit subjects
-        uses: RealWhyKnot/workflows/commit-subjects@v1
+        uses: RealWhyKnot/workflows/commit-subjects@v2026.10.28.0
         with:
           check-stamp: ${{ inputs.check-stamp }}
           stamp-pattern: ${{ inputs.stamp-pattern }}
