@@ -19,6 +19,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
     groups:
       lint-tools:
         update-types: [minor, patch]

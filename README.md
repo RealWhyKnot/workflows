@@ -1,10 +1,11 @@
 # workflows
 
-Shared GitHub Actions I use across my own repos. A fix goes in here once instead of into a dozen copies.
+Shared GitHub Actions I use across my own repos, so a fix goes in once here and every repo picks it
+up.
 
 ## Reusable workflows
 
-These replace a whole job. Call one and the runner, timeout and checkout come with it:
+Each of these is a whole job. Calling one brings the runner, timeout and checkout with it:
 
 ```yaml
 name: Commit message check
@@ -22,46 +23,46 @@ jobs:
     uses: RealWhyKnot/workflows/.github/workflows/commit-msg-check.yml@v1
 ```
 
-Set `permissions` on the calling job, not here. A called workflow can only keep or drop what the
-caller granted. It can't add to it, and a missing permission shows up as a 403 deep inside the run.
+Grant `permissions` on the job that calls the workflow. A called workflow can keep or drop what the
+caller granted but can't add to it, and a missing permission shows up as a 403 deep inside the run.
 
 | workflow | what it does | needs |
 | --- | --- | --- |
-| `commit-msg-check.yml` | Rejects commit subjects with more than one CalVer build stamp, optionally also non-conventional subjects and bodies matching a forbidden pattern. | `contents: read` |
-| `version-guard.yml` | Fails if a `const string Version` reappears in `Editor/` or `Runtime/`. | `contents: read` |
-| `dependabot-automerge.yml` | Turns on auto-merge for Dependabot updates of an allowed type. | `contents: write`, `pull-requests: write` |
+| `commit-msg-check.yml` | Fails on a commit subject with more than one CalVer build stamp. It can also require conventional subjects and reject bodies that match a pattern. | `contents: read` |
+| `version-guard.yml` | Fails if a `const string Version` shows up again in `Editor/` or `Runtime/`. | `contents: read` |
+| `dependabot-automerge.yml` | Turns on auto-merge for Dependabot updates of the types you allow. | `contents: write`, `pull-requests: write` |
 | `changelog-append.yml` | Runs your `Update-Changelog.ps1` over the pushed range and commits the result back, signed. | `contents: write` |
 | `nightly-beta.yml` | Tags a beta when main has changes since the last tag that pass the beta gate. | `contents: write`, plus `actions: read` with `ci-workflow` |
-| `nightly-beta-scripted.yml` | Same, but your own planner script decides the tag. | `contents: write`, `actions: write` |
-| `repo-checks.yml` | Runs `workflow-syntax`, `conformance` and actionlint with shellcheck. I call it from every repo's CI so drift fails the build. | `contents: read` |
+| `nightly-beta-scripted.yml` | The same, except your own planner script picks the tag. | `contents: write`, `actions: write` |
+| `repo-checks.yml` | Runs `workflow-syntax`, `conformance`, and actionlint with shellcheck. I call it from every repo's CI, so drift fails the build. | `contents: read` |
 
 `commit-msg-check.yml` inputs, all optional:
 
 | input | default | meaning |
 | --- | --- | --- |
-| `check-stamp` | `true` | Count build stamps per subject and fail on more than one. |
-| `stamp-pattern` | `\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}\|beta))?\)` | What one stamp looks like. |
-| `check-conventional` | `false` | Also require conventional subjects. |
+| `check-stamp` | `true` | Count the build stamps in each subject and fail on more than one. |
+| `stamp-pattern` | `\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}\|beta))?\)` | What a single stamp looks like. |
+| `check-conventional` | `false` | Require conventional subjects as well. |
 | `conventional-pattern` | `feat\|fix\|chore\|ci\|docs\|refactor\|test\|perf\|diag\|style` | Which types count. |
-| `forbidden-body-pattern` | none | Rejected anywhere in a non-merge commit body. I use it to keep upstream issue numbers out of a fork's history. |
+| `forbidden-body-pattern` | none | Fails a non-merge commit whose body matches it anywhere. I use it to keep upstream issue numbers out of a fork's history. |
 
-Merge and revert subjects skip the conventional and body checks, because a merge subject is never
-going to be a conventional commit. They're still counted for stamps.
+Merge and revert subjects skip the conventional and body checks, since a merge subject is never a
+conventional commit. They still count toward the stamp check.
 
-`version-guard.yml` takes `error-hint`, extra text for the failure message that tells
-people which pattern to use instead. `dependabot-automerge.yml` takes `update-types`
-(newline-separated, default `version-update:semver-patch`) and `merge-method` (default `rebase`).
+`version-guard.yml` takes `error-hint`, extra text in the failure message telling people which
+pattern to use instead. `dependabot-automerge.yml` takes `update-types` (one per line, default
+`version-update:semver-patch`) and `merge-method` (default `rebase`).
 
-`repo-checks.yml` takes `pins` (default `warn`) and `ignore-ecosystems`, which go to `conformance`,
-and `actionlint` (default `true`).
+`repo-checks.yml` passes `pins` (default `warn`) and `ignore-ecosystems` on to `conformance`. It
+also takes `actionlint`, default `true`.
 
-Dependabot gives its workflows a read-only token. Spell the write permissions above out on the
-calling job or the merge call fails.
+Workflows that Dependabot triggers get a read-only token, so the calling job has to list the write
+permissions above or the merge call fails.
 
 ## checksums
 
-Hashes release archives, writes an integrity manifest beside each one, and returns a Markdown table
-for the notes.
+Hashes release archives, writes an integrity manifest next to each one, and returns a Markdown table
+you can put in the release notes.
 
 ```yaml
 - name: Checksums
@@ -76,22 +77,23 @@ for the notes.
 
 | input | default | meaning |
 | --- | --- | --- |
-| `archives` | required | Newline-separated paths or globs. A pattern that doesn't match a file is an error. A renamed artifact fails the job instead of publishing a table with a row missing. |
-| `contents` | sibling | Directory whose files are listed after each archive row, for a manifest that also covers what's inside the archive. Left unset, each archive picks up a directory beside it with the same base name, which is what a publish-then-compress job already produces. |
-| `manifest-suffix` | `.integrity.tsv` | Suffix for the file written beside each archive. |
-| `manifest` | `true` | Set `false` for a table and nothing on disk. |
-| `units` | `MiB` | `MiB` is 1048576 bytes, `MB` is 1000000. The header says which. |
+| `archives` | required | Paths or globs, one per line. A pattern that matches no file is an error, so a renamed artifact fails the job before a table with a missing row gets published. |
+| `contents` | sibling | A directory whose files are listed after each archive's row, so the manifest also covers what's inside the archive. When it's unset, each archive picks up the directory next to it with the same base name, which is what a job that publishes and then compresses already leaves behind. |
+| `manifest-suffix` | `.integrity.tsv` | Suffix of the file written next to each archive. |
+| `manifest` | `true` | `false` gives you the table and writes nothing to disk. |
+| `units` | `MiB` | `MiB` is 1048576 bytes and `MB` is 1000000. The header says which. |
 | `table-file` | none | Also write the table to this path. |
 
-Outputs are `sha256` (the first archive), `manifests` and `table`.
+The outputs are `sha256` (of the first archive), `manifests` and `table`.
 
-The manifest is tab-separated, no header, lowercase hashes, `hash  bytes  name`, with the archive
-itself on the first line. A `.tar.gz` drops both extensions: `app-1.0.0.tar.gz` writes
+The manifest is tab-separated with no header and lowercase hashes, one `hash  bytes  name` line per
+file, with the archive itself first. A `.tar.gz` loses both extensions, so `app-1.0.0.tar.gz` gets
 `app-1.0.0.integrity.tsv`.
 
 Hash the archives on the runner that built them and read the manifests later. VRCFaceTracking
-published a table of wrong hashes for three releases by downloading a release asset to hash it.
-`Start-Process gh api -RedirectStandardOutput` re-encodes a binary stream instead of copying bytes.
+published a table of wrong hashes for three releases because it downloaded a release asset to hash
+it, and `Start-Process gh api -RedirectStandardOutput` re-encodes a binary stream instead of copying
+the bytes.
 
 ## release-notes
 
@@ -113,37 +115,37 @@ Builds release notes from conventional commits and writes them to a file for `gh
 
 | input | default | meaning |
 | --- | --- | --- |
-| `tag` | required | The tag being released. |
+| `tag` | required | The tag you're releasing. |
 | `repository` | the calling repo | `owner/name` to read commits from. |
-| `previous-tag` | resolved | What to diff against. A stable tag diffs against the last stable one, and a prerelease against whatever came before it. |
+| `previous-tag` | resolved | What to diff against. A stable tag is compared with the last stable tag, and a prerelease with whatever tag came before it. |
 | `title` | none | An H1 above the changes. |
-| `extra` | none | Markdown appended after the changelog, for downloads and hashes. |
+| `extra` | none | Markdown added after the changelog, for downloads and hashes. |
 
-The only output is `file`, the path to the generated Markdown.
+Its one output is `file`, the path to the Markdown it wrote.
 
-Commit authors are credited with a link to their profile, never a bare `@handle`. GitHub reads a
-bare handle as a mention: it pings that person and adds them to the release's Contributors avatar
-list, which is wrong when a fork's notes cover commits their upstream author never sent to my repo.
-The link looks the same and pings nobody. Bots like `dependabot[bot]` are named in plain text.
-Their login isn't a profile path.
+Commit authors get a link to their profile instead of a bare `@handle`. GitHub treats a bare handle
+as a mention: it pings the person and adds them to the release's Contributors avatars, which is
+wrong when a fork's notes cover commits their upstream author never sent to my repo. A link looks
+the same and pings nobody. Bots such as `dependabot[bot]` are named in plain text, since their login
+isn't a profile path.
 
-Commits are grouped by conventional-commit prefix into Breaking Changes, Features, Bug Fixes,
-Performance, Changes, Documentation, Build, CI, Tests, Chores and Other. A `type!:` subject goes to
-Breaking Changes. Merge commits and anything with `[skip changelog]` are dropped, and a trailing
-CalVer build stamp like `(2026.9.7.1-A528)` is stripped from the subject.
+Commits are grouped by their conventional prefix into Breaking Changes, Features, Bug Fixes,
+Performance, Changes, Documentation, Build, CI, Tests, Chores and Other, and a `type!:` subject goes
+under Breaking Changes. Merge commits and anything marked `[skip changelog]` are left out. A CalVer
+build stamp at the end of a subject, like `(2026.9.7.1-A528)`, is stripped.
 
-Authors are resolved to their GitHub logins through the commits API, which credits outside
-contributors correctly. If the API can't be reached, it falls back to `git log` and the raw commit
-author name. A first release lists every commit up to the tag. The API call needs `GH_TOKEN`, and
-the action passes `github.token` for you.
+Authors are looked up through the commits API, which gets outside contributors' GitHub logins
+right. When the API can't be reached it falls back to `git log` and the raw author name. A first
+release lists every commit up to the tag. The API call needs `GH_TOKEN`, and the action passes it
+`github.token` for you.
 
-Requires `fetch-depth: 0` and `fetch-tags: true` on the checkout, or there's no history to read.
+The checkout needs `fetch-depth: 0` and `fetch-tags: true`, or there's no history to read.
 
 ## commit-subjects
 
-The check behind `commit-msg-check.yml`, if you want it as a step inside a job you already have.
-Same inputs, plus `range` to override the range it works out from the triggering event. It needs a
-checkout with `fetch-depth: 0`.
+The check that `commit-msg-check.yml` runs, as a step you can add to a job you already have. It
+takes the same inputs, plus `range` to override the range it works out from the triggering event.
+It needs a checkout with `fetch-depth: 0`.
 
 ```yaml
 - uses: RealWhyKnot/workflows/commit-subjects@v1
@@ -154,21 +156,21 @@ checkout with `fetch-depth: 0`.
 ## workflow-syntax
 
 Parses every tracked `.ps1`, `.psm1` and `.psd1` file and every inline `pwsh` block under
-`.github/workflows`, then fails with a list of the syntax errors it found.
+`.github/workflows`, and fails with a list of the syntax errors it finds.
 
 ```yaml
 - uses: actions/checkout@v7
 - uses: RealWhyKnot/workflows/workflow-syntax@v1
 ```
 
-`${{ }}` expressions inside a block are fine. A block only gets checked when its step sets
-`shell: pwsh` above `run: |`. Steps that inherit `defaults.run.shell` or put `shell` after `run` are
-skipped, and so are composite `action.yml` files. Pass `root` to scan somewhere other than the
+`${{ }}` expressions inside a block don't trip it. It only checks a block whose step sets
+`shell: pwsh` before `run: |`. Steps that inherit `defaults.run.shell` or set `shell` after `run`
+are skipped, and so are composite `action.yml` files. Pass `root` to scan a folder other than the
 workspace.
 
 ## resolve-tag
 
-Validates the tag being released and tells you what it is.
+Checks the tag being released and tells you about it.
 
 ```yaml
 - id: tag
@@ -177,23 +179,23 @@ Validates the tag being released and tells you what it is.
     tag: ${{ inputs.tag }}
 ```
 
-With no `tag` it falls back to the ref that triggered the run. One step covers both a tag push and a
-manual re-release. Outputs `tag`, `version` (the tag without its `v`), `prerelease`, `channel`
-(`beta` or `release`) and `sha`, the commit the tag points at.
+Without a `tag` it uses the ref that triggered the run, so the same step handles a tag push and a
+manual re-release. The outputs are `tag`, `version` (the tag without its `v`), `prerelease`,
+`channel` (`beta` or `release`) and `sha`, the commit the tag points at.
 
 | input | default | meaning |
 | --- | --- | --- |
 | `tag` | the triggering ref | Tag to release. |
 | `tag-pattern` | `^v\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}\|beta))?$` | What a valid tag looks like. |
-| `prerelease-pattern` | `-beta` only | Which tags count as prereleases. Widen it if every suffix should. |
+| `prerelease-pattern` | `-beta` only | Which tags are prereleases. Widen it if every suffix should be one. |
 | `require-tag-exists` | `true` | Fail unless the tag resolves to a commit in the checkout. |
 
-I keep the two patterns separate because a `-A1B2` tag is valid but isn't a beta, and some of my repos
+The two patterns are separate because a `-A1B2` tag is valid but isn't a beta, and some of my repos
 want it treated one way and some the other.
 
 ## version-sequence
 
-Fails unless a CalVer tag uses the next free revision for its day.
+Fails unless a CalVer tag takes the next free revision for its day.
 
 ```yaml
 - uses: RealWhyKnot/workflows/version-sequence@v1
@@ -201,19 +203,19 @@ Fails unless a CalVer tag uses the next free revision for its day.
     tag: ${{ steps.tag.outputs.tag }}
 ```
 
-A day starts at `.0`. After that each tag is one above the highest same-day tag, whatever its
-suffix. The tag being checked is left out of the count, and re-running a release for a tag that
-already exists still passes. Check out with `fetch-depth: 0` or the earlier tags aren't there to
+Each day starts at `.0`, and every tag after that is one above the highest tag from the same day,
+whatever its suffix. The tag being checked doesn't count, so re-running the release for a tag that
+already exists still passes. Check out with `fetch-depth: 0`, or the earlier tags won't be there to
 count.
 
-`prerelease-suffix` is a regex for the part after the hyphen. Its default `[A-Za-z0-9]{4}` accepts
-`-beta` and `-A1B2` but not `-rc.1`. It only decides whether the tag itself is valid. I pass
-`[A-Za-z0-9][A-Za-z0-9.-]*` in repos that use any suffix. Set `repo-root` to read tags from another
-checkout.
+`prerelease-suffix` is a regex for what comes after the hyphen. The default, `[A-Za-z0-9]{4}`,
+accepts `-beta` and `-A1B2` but not `-rc.1`, and it only decides whether the tag itself is valid. In
+repos that use any suffix I pass `[A-Za-z0-9][A-Za-z0-9.-]*`. Set `repo-root` to read the tags from
+another checkout.
 
 ## publish-release
 
-Creates the release, uploads the assets, and can check that the upload worked.
+Creates the release and uploads the assets, and can check that the upload worked.
 
 ```yaml
 - uses: RealWhyKnot/workflows/publish-release@v1
@@ -226,17 +228,21 @@ Creates the release, uploads the assets, and can check that the upload worked.
       dist/app.zip.sha256
 ```
 
-An asset entry containing `*` or `?` is expanded. `dist/python/*` works, and a glob that doesn't
-match anything is skipped.
+Asset entries with `*` or `?` in them are expanded, so `dist/python/*` works. A glob that matches
+nothing is skipped.
 
-`prerelease: true` adds `--prerelease --latest=false`. `draft-first: true` creates a draft, confirms
-every asset is attached, and only then publishes it. Use it when a failed upload would otherwise
-publish an empty release. A re-run that finds a draft for the tag, like one a failed run left
-behind, checks its assets and publishes it the same way. `delete-existing: true` replaces an
-existing release for the tag. Give it `verify-asset` and `verify-sha256` together and it polls the
-API until the uploaded digest matches. An upload can report success before the asset is readable.
+`prerelease: true` adds `--prerelease --latest=false`.
 
-Cleaning up a half-made release is left to your workflow, because it has to run on failure:
+`draft-first: true` creates a draft, checks that every asset is attached, and only then publishes
+it. Use it where a failed upload would otherwise publish an empty release. If a re-run finds a draft
+for the tag, such as one a failed run left behind, it checks that draft's assets and publishes it
+the same way.
+
+`delete-existing: true` replaces a release that already exists for the tag. Given both
+`verify-asset` and `verify-sha256`, it polls the API until the uploaded asset's digest matches,
+because an upload can report success before the asset is readable.
+
+Your workflow has to clean up a half-made release itself, since that step has to run on failure:
 
 ```yaml
 - name: Remove a partial release
@@ -247,9 +253,9 @@ Cleaning up a half-made release is left to your workflow, because it has to run 
 
 ## commit-on-branch
 
-Commits files back to a branch through the GraphQL `createCommitOnBranch` mutation instead of
-`git push`. GitHub signs those commits server-side. They pass a "commits must have verified
-signatures" rule, and a plain push from Actions doesn't.
+Commits files to a branch through the GraphQL `createCommitOnBranch` mutation. GitHub signs those
+commits on its side, so they pass a rule that requires verified signatures. A plain `git push` from
+Actions doesn't.
 
 ```yaml
 - uses: RealWhyKnot/workflows/commit-on-branch@v1
@@ -259,18 +265,18 @@ signatures" rule, and a plain push from Actions doesn't.
       CHANGELOG.md
 ```
 
-It reads the branch head itself and sends it as `expectedHeadOid`. If another commit got there
-first, the mutation fails instead of overwriting it. By default it does nothing when the files
-already match the branch, and fails if GitHub doesn't report the new commit as verified. Set
+It reads the branch head itself and sends it as `expectedHeadOid`, so if another commit landed
+first the mutation fails and nothing is overwritten. By default it does nothing when the files
+already match the branch, and it fails if GitHub doesn't report the new commit as verified. Set
 `warn-on-failure: true` where a missed changelog commit shouldn't fail the release.
 
-A commit made with `GITHUB_TOKEN` doesn't trigger workflows. That's what stops the changelog commit
-from re-running the job that made it.
+A commit made with `GITHUB_TOKEN` doesn't trigger workflows, which is what keeps the changelog
+commit from re-running the job that made it.
 
 ## changelog-append
 
-Calls your repo's `Update-Changelog.ps1 -Mode Append -Range ...`, then commits whatever changed
-through `commit-on-branch`. The commit is signed and passes a required-signatures rule.
+Calls your repo's `Update-Changelog.ps1 -Mode Append -Range ...` and commits whatever changed
+through `commit-on-branch`, so the commit is signed and passes a required-signatures rule.
 
 ```yaml
 jobs:
@@ -281,17 +287,17 @@ jobs:
       range: ${{ inputs.range }}
 ```
 
-Keep the recursion guard on your own job. A commit made with `GITHUB_TOKEN` doesn't trigger
-workflows, but a manual re-run or a different actor can still loop. `changelog-paths` takes a
-newline-separated list for repos that keep more than one changelog.
+Keep the recursion guard on your own job. A `GITHUB_TOKEN` commit doesn't trigger workflows, but a
+manual re-run or a different actor can still loop. For repos with more than one changelog,
+`changelog-paths` takes a list of them, one per line.
 
 ## nightly-beta
 
-Tags `vYYYY.M.D.N-beta` when main has changes since the newest tag that pass the beta gate, and
-does nothing otherwise. A commit passes when its type is `feat`, `fix`, `perf`, `refactor` or
-`revert` (or it has a `!`) and it touches a path outside the ignore list. `release-types` and
-`ignore-paths` change those. The date comes from `timezone` (default `America/Chicago`), not UTC.
-A late-evening commit still gets that day's date.
+Tags `vYYYY.M.D.N-beta` when main has changes since the newest tag that pass the beta gate, and does
+nothing otherwise. A commit passes if its type is `feat`, `fix`, `perf`, `refactor` or `revert` (or
+it has a `!`) and it touches a path outside the ignore list. `release-types` and `ignore-paths`
+change those. The date is taken in `timezone` (default `America/Chicago`) rather than UTC, so a
+late-evening commit still gets that day's date.
 
 ```yaml
 jobs:
@@ -307,22 +313,22 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
 ```
 
-The release job stays in your repo. `./` inside a shared workflow would resolve to this repository,
-not yours. If your `release.yml` only triggers on a tag push, set `dispatch-release: true` instead
-and drop the second job. A tag pushed with `GITHUB_TOKEN` never fires that trigger.
+The release job stays in your repo, because `./` inside a shared workflow points at this
+repository. If your `release.yml` only runs on a tag push, set `dispatch-release: true` and drop the
+second job, since a tag pushed with `GITHUB_TOKEN` never fires that trigger.
 
-Set `ci-workflow: ci.yml` to tag only after that workflow has passed on the commit. It runs
-`wait-for-ci`, so the calling job needs `actions: read` too. With it set, the job timeout goes from
-5 minutes to 30, or 45 for the scripted one.
+Set `ci-workflow: ci.yml` to tag only once that workflow has passed on the commit. That runs
+`wait-for-ci`, so the calling job needs `actions: read` as well, and the job timeout goes from 5
+minutes to 30 (45 for the scripted workflow).
 
-`nightly-beta-scripted.yml` works the same way for repos whose own planner decides the tag. It runs
-`.github/scripts/Get-NightlyBetaPlan.ps1`, expects `has_changes` and `next_tag` outputs from it, and
-ANDs the result with the beta gate.
+`nightly-beta-scripted.yml` is the same for repos whose own planner picks the tag. It runs
+`.github/scripts/Get-NightlyBetaPlan.ps1`, reads `has_changes` and `next_tag` from it, and ANDs the
+result with the beta gate.
 
 ## beta-gate
 
-The check behind both nightly workflows. It says whether any commit since the last tag changes the
-program.
+The check both nightly workflows use. It tells you whether any commit since the last tag changes
+the program.
 
 ```yaml
 - uses: actions/checkout@v7
@@ -336,29 +342,28 @@ program.
       app/tests/**
 ```
 
-Outputs are `has_changes` (`true` or `false`) and `base`, the ref it compared from.
+The outputs are `has_changes` (`true` or `false`) and `base`, the ref it compared against.
 
 | input | default | meaning |
 | --- | --- | --- |
-| `base` | nearest tag | Ref to compare from. If it doesn't exist, everything counts as new and the gate passes. |
+| `base` | nearest tag | Ref to compare against. If it doesn't exist, everything counts as new and the gate passes. |
 | `tag-glob` | `v*` | Which tags count when looking for the nearest one. |
-| `ignore-paths` | none | Newline-separated globs added to the built-in list. |
+| `ignore-paths` | none | Globs added to the built-in list, one per line. |
 | `release-types` | `feat fix perf refactor revert` | Types that ship. Setting it replaces the list. |
 
 The built-in ignore list is `.github/**`, `.githooks/**`, `docs/**`, `wiki/**`, `tests/**`,
 `test/**`, `*.md`, `LICENSE*`, `NOTICE`, `.gitignore`, `.gitattributes`, `.editorconfig` and
-`.vscode/**`. A `*` stops at `/`. `*.md` only matches Markdown at the repo root, and `src/help.md`
-still counts.
+`.vscode/**`. A `*` doesn't cross `/`, so `*.md` only matches Markdown at the repo root and
+`src/help.md` still counts.
 
-Merge commits are skipped but the commits they bring in are checked. A subject that isn't a
-conventional commit is judged on its paths alone. With no tag reachable from HEAD the gate passes,
-and a tag on HEAD means there's nothing to check. A shallow checkout has no tags, which makes every
-run pass.
+Merge commits are skipped, but the commits they bring in are checked. A subject that isn't a
+conventional commit is judged by its paths alone. If no tag is reachable from HEAD the gate passes,
+and if HEAD is tagged there's nothing to check. A shallow checkout has no tags, so every run passes.
 
 ## nightly-plan
 
-Runs the beta gate, then picks the next same-day nightly tag. It's the planner inside
-`nightly-beta.yml`. It doesn't create or push the tag.
+Runs the beta gate and then works out the next nightly tag for the day. `nightly-beta.yml` uses it
+as its planner. It doesn't create or push the tag.
 
 ```yaml
 - id: plan
@@ -367,19 +372,19 @@ Runs the beta gate, then picks the next same-day nightly tag. It's the planner i
     suffix: beta
 ```
 
-Outputs `has_changes` and `next_tag`, which is empty when the gate fails. The tag is
-`vYYYY.M.D.N-suffix`, with `N` one above the highest same-day tag of any suffix, so it always agrees
-with `version-sequence`. Like the gate, it needs `fetch-depth: 0`.
+The outputs are `has_changes` and `next_tag`, which is empty when the gate fails. The tag is
+`vYYYY.M.D.N-suffix`, where `N` is one above the highest tag from the same day with any suffix, so
+it always agrees with `version-sequence`. Like the gate, it needs `fetch-depth: 0`.
 
 | input | default | meaning |
 | --- | --- | --- |
 | `timezone` | `America/Chicago` | Whose calendar date goes in the tag. |
-| `suffix` | `beta` | Text after the hyphen. Empty gives a plain `vYYYY.M.D.N`. |
-| `tag-glob`, `ignore-paths`, `release-types` | as `beta-gate` | Passed through to the gate. |
+| `suffix` | `beta` | What goes after the hyphen. Leave it empty for a plain `vYYYY.M.D.N`. |
+| `tag-glob`, `ignore-paths`, `release-types` | as `beta-gate` | Passed on to the gate. |
 
 ## wait-for-ci
 
-Waits for a workflow's push run to pass on a commit, and fails if it didn't. I put it in front of
+Waits for a workflow's push run on a commit to pass, and fails if it didn't. I put it before
 anything that tags or publishes, so a commit with red CI never ships.
 
 ```yaml
@@ -388,15 +393,15 @@ anything that tags or publishes, so a commit with red CI never ships.
     workflow: ci.yml
 ```
 
-A run that passed counts even if an earlier attempt failed. Pull request runs don't count. If a run
-is still going, it waits up to `timeout-minutes`.
+A run that passed counts even if an earlier attempt of it failed. Pull request runs don't count. If
+the run is still going, it waits up to `timeout-minutes`.
 
-Some commits never get a run of their own: a push that only touched ignored paths, or a commit pushed
-with `GITHUB_TOKEN`, like the changelog bot's. For those it walks back the first-parent history and
-uses the nearest commit that has a run. A commit from a person gets `grace-minutes` first, in case
-its run hasn't started yet. Bot commits don't wait.
+Some commits never get a run of their own, like a push that only touched ignored paths or a commit
+pushed with `GITHUB_TOKEN` (the changelog bot's, for one). For those it walks back along the
+first-parent history and uses the nearest commit that has a run. A commit from a person gets
+`grace-minutes` first, in case its run hasn't started yet. Bot commits don't wait.
 
-Needs `actions: read`. Outputs `sha`, the commit whose run passed, and `run-url`.
+It needs `actions: read`. The outputs are `sha`, the commit whose run passed, and `run-url`.
 
 | input | default | meaning |
 | --- | --- | --- |
@@ -404,28 +409,28 @@ Needs `actions: read`. Outputs `sha`, the commit whose run passed, and `run-url`
 | `workflow` | `ci.yml` | Workflow file whose runs count. |
 | `repository` | the calling repo | `owner/name`. |
 | `timeout-minutes` | `20` | How long to wait on a run that's still going. |
-| `grace-minutes` | `3` | How long a person's commit with no run gets before its ancestors are checked. |
+| `grace-minutes` | `3` | How long a person's commit with no run waits before its ancestors are checked. |
 | `max-depth` | `30` | How many ancestors to look through. |
 
 ## conformance
 
-Fails when a repo has drifted from the shared setup. It checks for:
+Fails when a repo has drifted from the shared setup. It looks for:
 
 - a `RealWhyKnot/workflows` reference that isn't on `@v1`
-- a `.githooks/commit-msg` or `prepare-commit-msg` that differs from `hooks/`, ignoring line
-  endings (a hook the repo doesn't have is skipped)
+- a `.githooks/commit-msg` or `prepare-commit-msg` that differs from the one in `hooks/`, ignoring
+  line endings (a hook the repo doesn't have is skipped)
 - no workflow calling `commit-msg-check.yml`, or a fork calling it without `forbidden-body-pattern`
-- no `.github/dependabot.yml`, an ecosystem the repo uses with no entry, or an entry with no
-  `commit-message` prefix
+- a missing `.github/dependabot.yml`, an ecosystem the repo uses that has no entry, or an entry
+  without a `commit-message` prefix
 
-The ecosystems come from tracked files. `Cargo.toml` means cargo, project files and
+It works out the ecosystems from tracked files. `Cargo.toml` means cargo, project files and
 `Directory.Packages.props` mean nuget, `package.json` means npm unless it's a Unity or VPM package,
-`requirements*.txt` and `pyproject.toml` mean pip, and `go.mod` means gomod. Any workflow means
-github-actions.
+`requirements*.txt` and `pyproject.toml` mean pip, and `go.mod` means gomod. Any workflow file
+means github-actions.
 
-A third-party action pinned to a branch, or to an older major than its latest release, gets a
-warning. `pins: fail` turns that into an error and `pins: off` skips the lookups. SHA pins and local
-actions are left alone.
+A third-party action pinned to a branch, or to an older major version than its latest release, gets
+a warning. `pins: fail` makes that an error and `pins: off` skips the lookups. SHA pins and local
+actions aren't checked.
 
 ```yaml
 - uses: RealWhyKnot/workflows/conformance@v1
@@ -435,7 +440,7 @@ actions are left alone.
 | --- | --- | --- |
 | `shared-ref` | `v1` | The ref every shared reference must use. |
 | `pins` | `warn` | `warn`, `fail` or `off` for stale third-party pins. |
-| `ignore-ecosystems` | none | Newline-separated ecosystems the repo leaves out on purpose. |
+| `ignore-ecosystems` | none | Ecosystems the repo leaves out on purpose, one per line. |
 | `root` | the workspace | Repository to check. |
 
 ## setup-rust
@@ -449,23 +454,23 @@ registry, git checkouts and `target`.
     components: rustfmt, clippy
 ```
 
-With no `toolchain` it reads `channel`, `components` and `targets` from `rust-toolchain.toml` in
-`working-directory` or the nearest folder above it, up to the repo root, then falls back to
-`stable`. A version pinned in that file doesn't need
-repeating in the workflow. The cache key is the OS, the toolchain and a hash of `Cargo.lock`.
+Without a `toolchain` input it reads `channel`, `components` and `targets` from
+`rust-toolchain.toml`, looking in `working-directory` and then each folder above it up to the repo
+root, and falls back to `stable`. A version pinned in that file doesn't need repeating in the
+workflow. The cache key is made from the OS, the toolchain and a hash of `Cargo.lock`.
 
 | input | default | meaning |
 | --- | --- | --- |
 | `toolchain` | from the file, else `stable` | Toolchain to install. |
-| `components`, `targets` | none | Added to whatever the file lists. Comma or newline separated. |
+| `components`, `targets` | none | Added to what the file lists. Separate them with commas or newlines. |
 | `working-directory` | `.` | Where `Cargo.lock` and `target` live, and where the search for `rust-toolchain.toml` starts. |
-| `cache` | `true` | Turn the cargo cache off. |
-| `cache-key` | `cargo` | Key prefix. Jobs that build different things should each get their own. |
+| `cache` | `true` | Set `false` to turn off the cargo cache. |
+| `cache-key` | `cargo` | Key prefix. Give jobs that build different things a prefix each. |
 
 ## setup-nsis
 
 Installs NSIS through Chocolatey unless `makensis /VERSION` already reports the version you asked
-for, then puts it on `PATH`. Windows only.
+for, and puts it on `PATH`. Windows only.
 
 ```yaml
 - uses: RealWhyKnot/workflows/setup-nsis@v1
@@ -475,85 +480,91 @@ for, then puts it on `PATH`. Windows only.
 
 ## hooks
 
-`commit-msg` rejects a subject with more than one build stamp, and `prepare-commit-msg` appends the
-current one. They're kept here so the pattern matches `commit-msg-check.yml` exactly. A test in this
-repo fails if the two ever drift apart.
+`commit-msg` rejects a subject with more than one build stamp, and `prepare-commit-msg` adds the
+current one. They live here so their pattern matches `commit-msg-check.yml` exactly, and a test in
+this repo fails if the two drift apart.
 
 ```
 pwsh path/to/workflows/hooks/Install-Hooks.ps1 -RepoRoot . -Force
 ```
 
-That copies both into `.githooks/`, writes a `hook-config` for anything non-default, and points
-`core.hooksPath` at it. Without `-Force` it doesn't overwrite a hook you've edited.
+That copies both hooks into `.githooks/`, writes a `hook-config` for any setting that isn't the
+default, and points `core.hooksPath` at the folder. Without `-Force` it won't overwrite a hook
+you've edited.
 
-The hook files are identical in every repo. Per-repo settings go in `hook-config`. Pass the same
+Every repo gets the same hook files, and its own settings go in `hook-config`. Pass the same
 settings you gave `commit-msg-check.yml`:
 
 | flag | effect |
 | --- | --- |
 | `-StampPattern` | Narrow what counts as a build stamp. |
-| `-NoStamp` | Skip stamping entirely, and don't install `prepare-commit-msg`. |
-| `-CheckConventional` | Also require conventional subjects. |
-| `-ForbiddenBodyPattern` | Reject a message matching this, for keeping upstream issue numbers out of a fork. |
-| `-VersionFile` | Name of the file holding the build stamp. Defaults to `version.txt`. |
-| `-VersionInGitDir` | Keep that file inside `.git` and stamping never dirties the worktree. |
+| `-NoStamp` | Don't stamp at all, and don't install `prepare-commit-msg`. |
+| `-CheckConventional` | Require conventional subjects as well. |
+| `-ForbiddenBodyPattern` | Reject a message that matches this. I use it to keep upstream issue numbers out of a fork. |
+| `-VersionFile` | The file that holds the build stamp. Defaults to `version.txt`. |
+| `-VersionInGitDir` | Keep that file inside `.git` so stamping never dirties the worktree. |
 
 Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body checks.
 
-`pre-push` isn't shared because each repo runs its own linter from it.
+`pre-push` isn't shared, because each repo runs its own linter from it.
 
 ## lint
 
-`lint/<lang>/` holds my baseline formatter and linter configs, one folder per language. To copy them
+`lint/<lang>/` has my baseline formatter and linter configs, one folder per language. To copy them
 into a repo:
 
 ```
 pwsh path/to/workflows/lint/Install-Lint.ps1 -RepoRoot .
 ```
 
-With no `-Lang` it picks languages from the repo's tracked files, skipping vendored code. Pass
-`-Lang rust,csharp` to choose them yourself. Each file lands at the same relative path in the repo,
-and one that already exists and differs is left alone unless you pass `-Force`.
+Without `-Lang` it picks the languages from the repo's tracked files and skips vendored code. Pass
+`-Lang rust,csharp` to choose them yourself. Each file goes to the same relative path in the repo,
+and a file that's already there and differs is left alone unless you pass `-Force`.
 
-`lint/common/` goes into every repo. `vendored-paths.txt` lists the code that keeps its upstream
-style: `name/` matches a folder with that name at any depth, and `/path/` matches from the repo root.
-It only holds generic names like `vendor/`. A repo lists its own upstream folders in
-`vendored-paths.local.txt` at its root, in the same format. Install-Lint adds those entries to the
-excludes in the files it installs (ruff, pyright, ESLint, Prettier, `.editorconfig` and its copy of
-`vendored-paths.txt`), and a rerun treats the result as current.
+Everything in `lint/common/` goes into every repo. `vendored-paths.txt` lists code that keeps its
+upstream style: `name/` matches a folder with that name at any depth, and `/path/` matches from the
+repo root. It only has generic names like `vendor/`. Each repo lists its own upstream folders in a
+`vendored-paths.local.txt` at its root, in the same format. Install-Lint adds those to the excludes
+in the files it installs (ruff, pyright, ESLint, Prettier, `.editorconfig` and its copy of
+`vendored-paths.txt`), and treats the result as current when it runs again.
 
-`style_check.py` and the `style_*.py` modules beside it check what the linters can't: comments and
+`style_check.py` and the `style_*.py` modules next to it check what the linters can't: comments and
 inline suppressions in Rust, C# and Python, files over 600 lines in any language, committed
 generated C#, crates that don't inherit `[workspace.lints]`, and lint or format configs below the
-repo root or in project files. Each repo's gate runs it from the root with Python 3.11 or later.
-`-B` keeps it from leaving a `__pycache__` folder there:
+repo root or inside project files. Each repo's gate runs it from the root with Python 3.11 or later,
+with `-B` so it doesn't leave a `__pycache__` folder behind:
 
 ```
 python -B style_check.py
 ```
 
-It also fails when `vendored-paths.local.txt` has an entry the installed `vendored-paths.txt`
-doesn't, since the other configs won't have it either until Install-Lint runs again. It exits 1 if
-it finds anything and 2 if it can't run, which includes a local entry in the wrong format.
+It also fails when `vendored-paths.local.txt` has an entry that the installed `vendored-paths.txt`
+doesn't, because the other configs won't have it either until Install-Lint runs again. It exits 1
+if it finds anything and 2 if it can't run, which includes a local entry in the wrong format.
 
-Files directly under `lint/<lang>/merge/` go inside a file the repo already has, such as the
+Files directly under `lint/<lang>/merge/` belong inside a file the repo already has, like the
 `[workspace.lints]` table in `Cargo.toml`. The script checks that file for every line or key and
-lists what's missing. A missing target is only a note unless the language's `install.psd1` names it
-with a `Merge` entry. Folders under `merge/` hold variants, which are used only when a rule picks
-one.
+lists what's missing. A missing target file is only a note, unless the language's `install.psd1`
+names it in a `Merge` entry. Folders under `merge/` hold variants that are only used when a rule
+picks one.
 
-An `install.psd1` in a language folder adjusts this per repo. A rule can swap in another file (Unity
-repos get `merge/unity/.editorconfig`) or skip one that doesn't apply, with a reason (Unity repos
-don't get the root `Directory.Build.props`). A rule that does neither is an old per-repo tweak, and
-the script tells you to remove it. When two languages ship `.editorconfig`, their sections go into one
-file, and a key they set differently is yours to settle. Any other file shipped by two languages is
-also left to you. If anything is left to do by hand, the script lists it and exits 1; otherwise it
-exits 0.
+I pin the TypeScript tools to exact versions in `lint/typescript/merge/package.json`, and
+Dependabot checks those pins every week. Install-Lint lists each pin that a repo's `package.json`
+has at a different version, so running it again in a repo after a bump shows what that repo still
+needs to update.
+
+An `install.psd1` in a language folder adjusts all this per repo. A rule can swap in a different
+file (Unity repos get `merge/unity/.editorconfig`) or skip one that doesn't apply and give a reason
+(Unity repos don't get the root `Directory.Build.props`). A rule that does neither is an old
+per-repo tweak, and the script tells you to remove it. When two languages both ship
+`.editorconfig`, their sections go into one file, and you settle any key they set differently. Any
+other file that two languages both ship is left to you too. If anything needs doing by hand, the
+script lists it and exits 1. Otherwise it exits 0.
 
 ## Dependabot
 
-Every repo has a `.github/dependabot.yml`, and `conformance` checks that it covers what the repo
-uses. This is the layout I start from:
+Every repo has a `.github/dependabot.yml`, and `conformance` checks that it covers everything the
+repo uses. This is the layout I start from:
 
 ```yaml
 version: 2
@@ -582,17 +593,18 @@ updates:
         update-types: [minor, patch]
 ```
 
-Swap the second entry for whatever the repo builds with. The `chore` prefix passes the conventional
-subject check, and the beta gate doesn't count it, so a dependency bump on its own never tags a
-nightly. Schedules and limits can differ per repo. The check only looks at coverage and the prefix.
+Replace the second entry with whatever the repo builds with. The `chore` prefix passes the
+conventional subject check and doesn't count for the beta gate, so a dependency bump on its own
+never tags a nightly. Schedules and limits can differ from repo to repo, since the check only looks
+at coverage and the prefix.
 
 ## Versioning
 
-Pin to `@v1`. That tag moves as fixes are released, and every repo picks them up without a bump.
-Pin to a full tag like `@v1.0.0` if you want a repo frozen, and set `shared-ref` to match or
-`conformance` will flag it.
+Pin to `@v1`. That tag moves forward as fixes are released, so every repo gets them without a bump.
+To freeze a repo, pin a full tag like `@v1.0.0` and set `shared-ref` to match, or `conformance`
+will flag it.
 
-Because `v1` moves, CI here runs every `Test-*.ps1` in the repo on both ubuntu and windows, plus
-actionlint, `workflow-syntax` and `conformance` over this repo, before I move the tag. `commits.yml` runs `commit-msg-check.yml` on
-this repo's own pushes and pull requests, with stamps off and conventional subjects required. It
-isn't meant to be called from other repos.
+Because `v1` moves, CI here runs every `Test-*.ps1` in the repo on ubuntu and windows, plus
+actionlint, `workflow-syntax` and `conformance` on this repo, before I move the tag. `commits.yml`
+runs `commit-msg-check.yml` on this repo's own pushes and pull requests, with stamps off and
+conventional subjects required. It isn't meant for other repos to call.
