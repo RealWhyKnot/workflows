@@ -1,36 +1,38 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$checker = Join-Path $PSScriptRoot 'Assert-CommitSubjects.ps1'
-$script:failures = 0
-$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("commit-subjects-" + [System.Guid]::NewGuid().ToString('N'))
-
 function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory = $true)][string[]] $Arguments)
     $out = & git @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed: $out" }
 }
 
 function New-Commit {
+    [CmdletBinding()]
+    [OutputType([string])]
     param([Parameter(Mandatory = $true)][string] $Subject, [string] $Body = '')
-    Add-Content -LiteralPath (Join-Path $sandbox 'log.txt') -Value $Subject
+    [System.IO.File]::AppendAllText((Join-Path $script:sandbox 'log.txt'), $Subject + [Environment]::NewLine)
     Invoke-Git @('add', '-A')
-    $args = @('commit', '-m', $Subject)
-    if ($Body) { $args += @('-m', $Body) }
-    Invoke-Git $args
+    $gitArgs = if ($Body) { @('commit', '-m', $Subject, '-m', $Body) } else { @('commit', '-m', $Subject) }
+    Invoke-Git $gitArgs
     return (& git rev-parse HEAD).Trim()
 }
 
 function Assert-Pass {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params)
-    $out = & $checker @Params *>&1
+    $out = & $script:checker @Params *>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "FAIL  $Name -- expected pass, got exit $LASTEXITCODE"
-        $out | ForEach-Object { Write-Host "        $_" }
+        foreach ($line in $out) { Write-Host "        $line" }
         $script:failures++
     } else {
         Write-Host "ok    $Name"
@@ -38,8 +40,10 @@ function Assert-Pass {
 }
 
 function Assert-Fail {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [string] $ExpectedText)
-    $out = (& $checker @Params *>&1) -join "`n"
+    $out = (& $script:checker @Params *>&1) -join "`n"
     if ($LASTEXITCODE -eq 0) {
         Write-Host "FAIL  $Name -- expected failure, got exit 0"
         $script:failures++
@@ -52,9 +56,14 @@ function Assert-Fail {
     }
 }
 
+$script:checker = Join-Path $PSScriptRoot 'Assert-CommitSubjects.ps1'
+$script:failures = 0
+$sandboxName = 'commit-subjects-' + [System.Guid]::NewGuid().ToString('N')
+$script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) $sandboxName
+
 try {
-    New-Item -ItemType Directory -Path $sandbox -Force | Out-Null
-    Push-Location $sandbox
+    $null = New-Item -ItemType Directory -Path $script:sandbox -Force
+    Push-Location $script:sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -68,36 +77,57 @@ try {
     $merge = New-Commit -Subject 'Merge branch feature/x into main'
     $revert = New-Commit -Subject 'revert: drop the thing (2026.9.8.3-E5F6)'
 
-    Assert-Pass 'single stamp passes' @{ Range = "$base..$clean" }
-    Assert-Fail 'double stamp fails' @{ Range = "$clean..$double" } 'carries 2 build-version stamps'
-    Assert-Pass 'double stamp ignored when stamp check is off' @{ Range = "$clean..$double"; CheckStamp = $false }
-    Assert-Pass 'non-conventional passes when not checked' @{ Range = "$double..$nonConv" }
-    Assert-Fail 'non-conventional fails when checked' @{ Range = "$double..$nonConv"; CheckConventional = $true } 'is not a conventional commit'
-    Assert-Pass 'conventional subject passes the conventional check' @{ Range = "$base..$clean"; CheckConventional = $true }
-    Assert-Fail 'forbidden body pattern fails' @{ Range = "$nonConv..$withIssue"; ForbiddenBodyPattern = '(^|[^A-Za-z0-9_])#[0-9]+' } 'references an issue number'
-    Assert-Pass 'forbidden body pattern skipped when empty' @{ Range = "$nonConv..$withIssue" }
-    Assert-Pass 'merge subject skips the conventional check' @{ Range = "$withIssue..$merge"; CheckConventional = $true }
-    Assert-Pass 'revert is a conventional type' @{ Range = "$merge..$revert"; CheckConventional = $true }
+    Assert-Pass -Name 'single stamp passes' -Params @{ Range = "$base..$clean" }
+    Assert-Fail -Name 'double stamp fails' -Params @{
+        Range = "$clean..$double"
+    } -ExpectedText 'carries 2 build-version stamps'
+    Assert-Pass -Name 'double stamp ignored when stamp check is off' -Params @{
+        Range = "$clean..$double"; CheckStamp = $false
+    }
+    Assert-Pass -Name 'non-conventional passes when not checked' -Params @{ Range = "$double..$nonConv" }
+    Assert-Fail -Name 'non-conventional fails when checked' -Params @{
+        Range = "$double..$nonConv"; CheckConventional = $true
+    } -ExpectedText 'is not a conventional commit'
+    Assert-Pass -Name 'conventional subject passes the conventional check' -Params @{
+        Range = "$base..$clean"; CheckConventional = $true
+    }
+    Assert-Fail -Name 'forbidden body pattern fails' -Params @{
+        Range = "$nonConv..$withIssue"; ForbiddenBodyPattern = '(^|[^A-Za-z0-9_])#[0-9]+'
+    } -ExpectedText 'references an issue number'
+    Assert-Pass -Name 'forbidden body pattern skipped when empty' -Params @{ Range = "$nonConv..$withIssue" }
+    Assert-Pass -Name 'merge subject skips the conventional check' -Params @{
+        Range = "$withIssue..$merge"; CheckConventional = $true
+    }
+    Assert-Pass -Name 'revert is a conventional type' -Params @{ Range = "$merge..$revert"; CheckConventional = $true }
 
-    Assert-Pass 'push-range shas resolve' @{ BeforeSha = $base; AfterSha = $clean }
-    Assert-Pass 'no shas at all falls back to the tip commit, as on workflow_dispatch' @{}
-    Assert-Pass 'first-push zero sha falls back to one commit' @{ BeforeSha = '0000000000000000000000000000000000000000'; AfterSha = $clean }
-    Assert-Fail 'pr shas resolve and still catch a bad subject' @{ PrBaseSha = $clean; PrHeadSha = $double } 'build-version stamps'
+    Assert-Pass -Name 'push-range shas resolve' -Params @{ BeforeSha = $base; AfterSha = $clean }
+    Assert-Pass -Name 'no shas at all falls back to the tip commit, as on workflow_dispatch' -Params @{}
+    Assert-Pass -Name 'first-push zero sha falls back to one commit' -Params @{
+        BeforeSha = '0000000000000000000000000000000000000000'; AfterSha = $clean
+    }
+    Assert-Fail -Name 'pr shas resolve and still catch a bad subject' -Params @{
+        PrBaseSha = $clean; PrHeadSha = $double
+    } -ExpectedText 'build-version stamps'
 
     $strict = '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-beta)?\)'
-    Assert-Pass 'a hex suffix is not a stamp under the -beta-only pattern' @{ Range = "$clean..$double"; StampPattern = $strict }
+    Assert-Pass -Name 'a hex suffix is not a stamp under the -beta-only pattern' -Params @{
+        Range = "$clean..$double"; StampPattern = $strict
+    }
 
     Invoke-Git @('checkout', '--quiet', '-b', 'foreign', $base)
-    $foreign = New-Commit -Subject 'upstream work that was never conventional'
+    $null = New-Commit -Subject 'upstream work that was never conventional'
     Invoke-Git @('checkout', '--quiet', 'main')
     Invoke-Git @('merge', '--quiet', '-s', 'ours', 'foreign', '-m', 'chore: absorb foreign history')
     $mergeOurs = (& git rev-parse HEAD).Trim()
-    Assert-Pass 'foreign commits behind a merge are not validated' @{ Range = "$revert..$mergeOurs"; CheckConventional = $true }
-    Assert-Fail 'first-parent commits are still validated across a merge' @{ Range = "$double..$mergeOurs"; CheckConventional = $true } 'is not a conventional commit'
-}
-finally {
+    Assert-Pass -Name 'foreign commits behind a merge are not validated' -Params @{
+        Range = "$revert..$mergeOurs"; CheckConventional = $true
+    }
+    Assert-Fail -Name 'first-parent commits are still validated across a merge' -Params @{
+        Range = "$double..$mergeOurs"; CheckConventional = $true
+    } -ExpectedText 'is not a conventional commit'
+} finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 if ($script:failures -gt 0) {

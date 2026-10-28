@@ -1,37 +1,42 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$installer = Join-Path $PSScriptRoot 'Install-RustToolchain.ps1'
-$script:failures = 0
-$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("setup-rust-" + [System.Guid]::NewGuid().ToString('N'))
-
 function Invoke-Install {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
     param([hashtable] $Params, [hashtable] $Files = @{})
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force }
-    New-Item -ItemType Directory -Path $sandbox -Force | Out-Null
+    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force }
+    $null = New-Item -ItemType Directory -Path $script:sandbox -Force
     foreach ($k in $Files.Keys) {
-        $full = Join-Path $sandbox $k
-        New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force | Out-Null
-        Set-Content -LiteralPath $full -Value $Files[$k] -NoNewline
+        $full = Join-Path $script:sandbox $k
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force
+        [System.IO.File]::WriteAllText($full, $Files[$k])
     }
     $state = @{ Calls = New-Object System.Collections.Generic.List[string] }
     $rustup = { param([string[]] $Arguments) $state.Calls.Add($Arguments -join ' ') }.GetNewClosure()
-    $out = Join-Path $sandbox 'out.txt'
-    $p = @{ Rustup = $rustup; OutputPath = $out; WorkingDirectory = $sandbox }
+    $out = Join-Path $script:sandbox 'out.txt'
+    $p = @{ Rustup = $rustup; OutputPath = $out; WorkingDirectory = $script:sandbox }
     foreach ($k in $Params.Keys) { $p[$k] = $Params[$k] }
-    if ($Params.ContainsKey('WorkingDirectory')) { $p.WorkingDirectory = Join-Path $sandbox $Params.WorkingDirectory }
-    Push-Location $sandbox
-    try { $null = & $installer @p *>&1 } finally { Pop-Location }
+    if ($Params.ContainsKey('WorkingDirectory')) {
+        $p.WorkingDirectory = Join-Path $script:sandbox $Params.WorkingDirectory
+    }
+    Push-Location $script:sandbox
+    try { $null = & $script:installer @p *>&1 } finally { Pop-Location }
     $map = @{}
-    foreach ($line in (Get-Content -LiteralPath $out)) { if ($line -match '^([^=]+)=(.*)$') { $map[$Matches[1]] = $Matches[2] } }
+    foreach ($line in [System.IO.File]::ReadAllLines($out)) {
+        if ($line -match '^([^=]+)=(.*)$') { $map[$Matches[1]] = $Matches[2] }
+    }
     return @{ Calls = @($state.Calls); Out = $map }
 }
 
 function Assert-Install {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Result, [string] $Install, [hashtable] $Outputs = @{})
     $problem = $null
     if ($Result.Calls[0] -ne $Install) { $problem = "ran 'rustup $($Result.Calls[0])'" }
@@ -43,27 +48,66 @@ function Assert-Install {
     Write-Host "ok    $Name"
 }
 
+$script:installer = Join-Path $PSScriptRoot 'Install-RustToolchain.ps1'
+$script:failures = 0
+$script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('setup-rust-' + [System.Guid]::NewGuid().ToString('N'))
+
 $base = 'toolchain install {0} --profile minimal --no-self-update'
 $file = "[toolchain]`nchannel = `"1.99.1`"`ncomponents = [`"rustfmt`", `"clippy`"]`n"
+$pinned = ($base -f '1.99.1') + ' --component rustfmt,clippy'
 
 try {
-    Assert-Install 'no input and no file installs stable' (Invoke-Install @{}) ($base -f 'stable') @{ toolchain = 'stable'; 'lock-hash' = 'nolock'; 'target-dir' = 'target' }
-    Assert-Install 'components and targets are passed on' (Invoke-Install @{ Components = @('rustfmt, clippy'); Targets = @("x86_64-pc-windows-msvc`naarch64-apple-darwin") }) (($base -f 'stable') + ' --component rustfmt,clippy --target x86_64-pc-windows-msvc,aarch64-apple-darwin')
-    Assert-Install 'empty inputs add nothing' (Invoke-Install @{ Components = @(''); Targets = @('') }) ($base -f 'stable')
-    Assert-Install 'rust-toolchain.toml decides the channel and components' (Invoke-Install @{} @{ 'rust-toolchain.toml' = $file }) (($base -f '1.99.1') + ' --component rustfmt,clippy') @{ toolchain = '1.99.1' }
-    Assert-Install 'an input toolchain wins over the file' (Invoke-Install @{ Toolchain = 'nightly' } @{ 'rust-toolchain.toml' = $file }) ($base -f 'nightly')
-    Assert-Install 'a legacy rust-toolchain file works' (Invoke-Install @{} @{ 'rust-toolchain' = "1.90.0`n" }) ($base -f '1.90.0') @{ toolchain = '1.90.0' }
-    $locked = Invoke-Install @{ WorkingDirectory = 'bridge' } @{ 'bridge/Cargo.lock' = 'lock'; 'bridge/rust-toolchain.toml' = $file }
-    Assert-Install 'a working directory finds its own file, lock and target' $locked (($base -f '1.99.1') + ' --component rustfmt,clippy') @{ 'target-dir' = 'bridge/target' }
-    Assert-Install 'a working directory falls back to the repo root file' (Invoke-Install @{ WorkingDirectory = 'bridge' } @{ '.git/HEAD' = 'ref'; 'rust-toolchain.toml' = $file; 'bridge/Cargo.toml' = '' }) (($base -f '1.99.1') + ' --component rustfmt,clippy') @{ toolchain = '1.99.1'; 'target-dir' = 'bridge/target' }
-    Assert-Install 'the search stops at the repo root' (Invoke-Install @{ WorkingDirectory = 'repo/bridge' } @{ 'rust-toolchain.toml' = $file; 'repo/.git/HEAD' = 'ref'; 'repo/bridge/Cargo.toml' = '' }) ($base -f 'stable') @{ toolchain = 'stable' }
+    $r = Invoke-Install -Params @{}
+    Assert-Install -Name 'no input and no file installs stable' -Result $r -Install ($base -f 'stable') -Outputs @{
+        toolchain = 'stable'; 'lock-hash' = 'nolock'; 'target-dir' = 'target'
+    }
+
+    $r = Invoke-Install -Params @{
+        Components = @('rustfmt, clippy'); Targets = @("x86_64-pc-windows-msvc`naarch64-apple-darwin")
+    }
+    $expected = ($base -f 'stable') + ' --component rustfmt,clippy --target x86_64-pc-windows-msvc,aarch64-apple-darwin'
+    Assert-Install -Name 'components and targets are passed on' -Result $r -Install $expected
+
+    $r = Invoke-Install -Params @{ Components = @(''); Targets = @('') }
+    Assert-Install -Name 'empty inputs add nothing' -Result $r -Install ($base -f 'stable')
+
+    $r = Invoke-Install -Params @{} -Files @{ 'rust-toolchain.toml' = $file }
+    $name = 'rust-toolchain.toml decides the channel and components'
+    Assert-Install -Name $name -Result $r -Install $pinned -Outputs @{ toolchain = '1.99.1' }
+
+    $r = Invoke-Install -Params @{ Toolchain = 'nightly' } -Files @{ 'rust-toolchain.toml' = $file }
+    Assert-Install -Name 'an input toolchain wins over the file' -Result $r -Install ($base -f 'nightly')
+
+    $r = Invoke-Install -Params @{} -Files @{ 'rust-toolchain' = "1.90.0`n" }
+    Assert-Install -Name 'a legacy rust-toolchain file works' -Result $r -Install ($base -f '1.90.0') -Outputs @{
+        toolchain = '1.90.0'
+    }
+
+    $locked = Invoke-Install -Params @{ WorkingDirectory = 'bridge' } -Files @{
+        'bridge/Cargo.lock' = 'lock'; 'bridge/rust-toolchain.toml' = $file
+    }
+    $name = 'a working directory finds its own file, lock and target'
+    Assert-Install -Name $name -Result $locked -Install $pinned -Outputs @{ 'target-dir' = 'bridge/target' }
+
+    $r = Invoke-Install -Params @{ WorkingDirectory = 'bridge' } -Files @{
+        '.git/HEAD' = 'ref'; 'rust-toolchain.toml' = $file; 'bridge/Cargo.toml' = ''
+    }
+    Assert-Install -Name 'a working directory falls back to the repo root file' -Result $r -Install $pinned -Outputs @{
+        toolchain = '1.99.1'; 'target-dir' = 'bridge/target'
+    }
+
+    $r = Invoke-Install -Params @{ WorkingDirectory = 'repo/bridge' } -Files @{
+        'rust-toolchain.toml' = $file; 'repo/.git/HEAD' = 'ref'; 'repo/bridge/Cargo.toml' = ''
+    }
+    Assert-Install -Name 'the search stops at the repo root' -Result $r -Install ($base -f 'stable') -Outputs @{
+        toolchain = 'stable'
+    }
+
     if ($locked.Out['lock-hash'] -notmatch '^[0-9a-f]{16}$') {
         Write-Host "FAIL  the lock file is hashed: got '$($locked.Out['lock-hash'])'"; $script:failures++
-    }
-    else { Write-Host 'ok    the lock file is hashed' }
-}
-finally {
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    } else { Write-Host 'ok    the lock file is hashed' }
+} finally {
+    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

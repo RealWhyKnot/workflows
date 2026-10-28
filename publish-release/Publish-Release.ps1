@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -23,35 +24,27 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-if (-not $Title) { $Title = $Tag }
-$assetList = @()
-foreach ($entry in @($Assets | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })) {
-    if ($entry -match '[*?]') {
-        # A glob that matches nothing contributes nothing, which is what the hand-rolled
-        # Get-ChildItem calls this replaces did.
-        $assetList += @(Get-ChildItem -Path $entry -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
-    } else {
-        $assetList += $entry
-    }
-}
-
 function Invoke-Gh {
-    param([string[]] $Arguments)
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string[]] $Arguments, [bool] $DryRun)
     if ($DryRun) { Write-Host "gh $($Arguments -join ' ')"; return '' }
     $output = & gh @Arguments
     return $output
 }
 
 function Publish-Draft {
-    $viewArgs = @('release', 'view', $Tag, '--json', 'assets,isDraft')
-    if ($Repository) { $viewArgs += @('--repo', $Repository) }
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([string] $Tag, [string[]] $RepoArgs, [string[]] $AssetList, [bool] $DryRun)
+    $viewArgs = @('release', 'view', $Tag, '--json', 'assets,isDraft') + $RepoArgs
     if ($DryRun) {
         Write-Host "gh $($viewArgs -join ' ')"
     } else {
         $json = & gh @viewArgs
         if ($LASTEXITCODE -ne 0) { throw "gh release view failed ($LASTEXITCODE)" }
         $info = $json | ConvertFrom-Json
-        foreach ($expected in $assetList) {
+        foreach ($expected in $AssetList) {
             $name = Split-Path -Leaf $expected
             if (-not ($info.assets.name -contains $name)) {
                 throw "Asset '$name' did not attach to draft release $Tag; leaving it as a draft for inspection."
@@ -59,14 +52,27 @@ function Publish-Draft {
         }
         Write-Host "Draft $Tag carries every expected asset, promoting it."
     }
-    $editArgs = @('release', 'edit', $Tag, '--draft=false')
-    if ($Repository) { $editArgs += @('--repo', $Repository) }
-    Invoke-Gh -Arguments $editArgs | Out-Null
+    $editArgs = @('release', 'edit', $Tag, '--draft=false') + $RepoArgs
+    $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun
     if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit --draft=false failed ($LASTEXITCODE)" }
 }
 
-$lookupArgs = @('release', 'view', $Tag, '--json', 'id,isDraft')
-if ($Repository) { $lookupArgs += @('--repo', $Repository) }
+if (-not $Title) { $Title = $Tag }
+$assetList = @(foreach ($asset in $Assets) {
+        if (-not ($asset -and $asset.Trim())) { continue }
+        $entry = $asset.Trim()
+        if ($entry -match '[*?]') {
+            foreach ($file in @(Get-ChildItem -Path $entry -File -ErrorAction SilentlyContinue)) { $file.FullName }
+        } else {
+            $entry
+        }
+    })
+$repoArgs = @(if ($Repository) { '--repo'; $Repository })
+$titleArgs = @('--title', $Title) + @(if ($NotesFile) { '--notes-file'; $NotesFile })
+$prereleaseArgs = @(if ($Prerelease) { '--prerelease'; '--latest=false' })
+$draftArgs = @{ Tag = $Tag; RepoArgs = $repoArgs; AssetList = $assetList; DryRun = $DryRun.IsPresent }
+
+$lookupArgs = @('release', 'view', $Tag, '--json', 'id,isDraft') + $repoArgs
 $existing = [bool] $AssumeExisting
 $existingDraft = [bool] $AssumeDraft
 if ($DryRun) {
@@ -80,8 +86,7 @@ if ($DryRun) {
 }
 
 if ($DeleteExisting -and $existing) {
-    $deleteArgs = @('release', 'delete', $Tag, '--yes')
-    if ($Repository) { $deleteArgs += @('--repo', $Repository) }
+    $deleteArgs = @('release', 'delete', $Tag, '--yes') + $repoArgs
     if ($DryRun) {
         Write-Host "gh $($deleteArgs -join ' ')"
     } else {
@@ -93,38 +98,27 @@ if ($DeleteExisting -and $existing) {
 }
 
 if ($existing) {
-    $editArgs = @('release', 'edit', $Tag)
-    if ($Repository) { $editArgs += @('--repo', $Repository) }
-    $editArgs += @('--title', $Title)
-    if ($NotesFile)  { $editArgs += @('--notes-file', $NotesFile) }
-    if ($Prerelease) { $editArgs += @('--prerelease', '--latest=false') }
-    Invoke-Gh -Arguments $editArgs | Out-Null
+    $editArgs = @('release', 'edit', $Tag) + $repoArgs + $titleArgs + $prereleaseArgs
+    $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun.IsPresent
     if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
 
     if ($assetList.Count -gt 0) {
-        $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber')
-        if ($Repository) { $uploadArgs += @('--repo', $Repository) }
-        Invoke-Gh -Arguments $uploadArgs | Out-Null
+        $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber') + $repoArgs
+        $null = Invoke-Gh -Arguments $uploadArgs -DryRun $DryRun.IsPresent
         if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     }
-    if ($existingDraft) { Publish-Draft }
+    if ($existingDraft) { Publish-Draft @draftArgs }
     Write-Host "Updated the existing release $Tag."
-}
-else {
+} else {
+    $targetArgs = @(if ($Target) { '--target'; $Target })
+    $draftFlag = @(if ($DraftFirst) { '--draft' })
+    $createArgs = @('release', 'create', $Tag) + $assetList + $repoArgs + $targetArgs + $titleArgs + $draftFlag +
+    $prereleaseArgs
 
-$createArgs = @('release', 'create', $Tag) + $assetList
-if ($Repository) { $createArgs += @('--repo', $Repository) }
-if ($Target)     { $createArgs += @('--target', $Target) }
-$createArgs += @('--title', $Title)
-if ($NotesFile)  { $createArgs += @('--notes-file', $NotesFile) }
-if ($DraftFirst) { $createArgs += '--draft' }
-if ($Prerelease) { $createArgs += @('--prerelease', '--latest=false') }
+    $null = Invoke-Gh -Arguments $createArgs -DryRun $DryRun.IsPresent
+    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
 
-Invoke-Gh -Arguments $createArgs | Out-Null
-if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
-
-if ($DraftFirst) { Publish-Draft }
-
+    if ($DraftFirst) { Publish-Draft @draftArgs }
 }
 
 if ($VerifySha256 -and $VerifyAsset) {
@@ -150,3 +144,4 @@ if ($VerifySha256 -and $VerifyAsset) {
 }
 
 Write-Host "Published $Tag."
+exit 0

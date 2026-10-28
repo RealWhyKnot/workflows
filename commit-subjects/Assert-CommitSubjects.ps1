@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [string] $Range = '',
@@ -9,7 +10,8 @@ param(
     [bool] $CheckStamp = $true,
     [string] $StampPattern = '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}|beta))?\)',
     [bool] $CheckConventional = $false,
-    [string] $ConventionalPattern = '^(feat|fix|chore|ci|docs|refactor|revert|test|perf|diag|style)(\([a-z0-9-]+\))?!?: .+',
+    [string] $ConventionalPattern = '^(feat|fix|chore|ci|docs|refactor|revert|test|perf|diag|style)' +
+    '(\([a-z0-9-]+\))?!?: .+',
     [string] $ForbiddenBodyPattern = ''
 )
 
@@ -17,15 +19,24 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Resolve-Range {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string] $Range, [string] $BeforeSha, [string] $AfterSha, [string] $PrBaseSha, [string] $PrHeadSha)
     if ($Range) { return $Range }
     if ($PrBaseSha -and $PrHeadSha) { return "$PrBaseSha..$PrHeadSha" }
-    # workflow_dispatch and schedule carry no push shas, so check the tip commit.
     if (-not $AfterSha) { return 'HEAD~1..HEAD' }
     if (-not $BeforeSha -or $BeforeSha -match '^0+$') { return "$AfterSha~1..$AfterSha" }
     return "$BeforeSha..$AfterSha"
 }
 
-$resolved = Resolve-Range
+$rangeArgs = @{
+    Range     = $Range
+    BeforeSha = $BeforeSha
+    AfterSha  = $AfterSha
+    PrBaseSha = $PrBaseSha
+    PrHeadSha = $PrHeadSha
+}
+$resolved = Resolve-Range @rangeArgs
 Write-Host "Validating commits in range: $resolved"
 
 $log = @(& git log --first-parent --format='%H %s' $resolved)
@@ -71,3 +82,4 @@ if ($failures -gt 0) {
 }
 
 Write-Host "All $($log.Count) commit subject(s) in $resolved pass."
+exit 0

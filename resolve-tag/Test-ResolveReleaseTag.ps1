@@ -1,36 +1,38 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$script:checker = Join-Path $PSScriptRoot 'Resolve-ReleaseTag.ps1'
-$script:failures = 0
-$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("resolve-tag-" + [System.Guid]::NewGuid().ToString('N'))
-$script:outFile = Join-Path $sandbox 'out.txt'
-
 function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory = $true)][string[]] $Arguments)
     $out = & git @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed: $out" }
 }
 
 function Invoke-Resolve {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
     param([hashtable] $Params)
-    Set-Content -LiteralPath $script:outFile -Value '' -NoNewline
+    [System.IO.File]::WriteAllText($script:outFile, '')
     $p = @{} + $Params
     $p['OutputPath'] = $script:outFile
     $null = & $script:checker @p *>&1
     $code = $LASTEXITCODE
     $map = @{}
-    foreach ($line in (Get-Content -LiteralPath $script:outFile -ErrorAction SilentlyContinue)) {
+    foreach ($line in [System.IO.File]::ReadAllLines($script:outFile)) {
         if ($line -match '^([^=]+)=(.*)$') { $map[$Matches[1]] = $Matches[2] }
     }
     return @{ Code = $code; Out = $map }
 }
 
-function Assert-Outputs {
+function Assert-Output {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [hashtable] $Expected)
     $r = Invoke-Resolve -Params $Params
     if ($r.Code -ne 0) { Write-Host "FAIL  $Name -- exit $($r.Code)"; $script:failures++; return }
@@ -43,21 +45,28 @@ function Assert-Outputs {
     Write-Host "ok    $Name"
 }
 
-function Assert-Fails {
+function Assert-Failure {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params)
     $r = Invoke-Resolve -Params $Params
     if ($r.Code -eq 0) { Write-Host "FAIL  $Name -- expected failure, got exit 0"; $script:failures++; return }
     Write-Host "ok    $Name"
 }
 
+$script:checker = Join-Path $PSScriptRoot 'Resolve-ReleaseTag.ps1'
+$script:failures = 0
+$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('resolve-tag-' + [System.Guid]::NewGuid().ToString('N'))
+$script:outFile = Join-Path $sandbox 'out.txt'
+
 try {
-    New-Item -ItemType Directory -Path $sandbox -Force | Out-Null
+    $null = New-Item -ItemType Directory -Path $sandbox -Force
     Push-Location $sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
     Invoke-Git @('config', 'commit.gpgsign', 'false')
-    Set-Content -LiteralPath (Join-Path $sandbox 'a.txt') -Value 'seed'
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'a.txt'), 'seed' + [Environment]::NewLine)
     Invoke-Git @('add', '-A')
     Invoke-Git @('commit', '-m', 'chore: seed')
     $head = (& git rev-parse HEAD).Trim()
@@ -65,31 +74,47 @@ try {
     Invoke-Git @('tag', 'v2026.9.8.1-beta')
     Invoke-Git @('tag', 'v2026.9.8.2-A1B2')
 
-    Assert-Outputs 'a stable tag resolves' @{ Tag = 'v2026.9.8.0' } @{ tag='v2026.9.8.0'; version='2026.9.8.0'; prerelease='false'; channel='release'; sha=$head }
-    Assert-Outputs 'a beta tag is a prerelease' @{ Tag = 'v2026.9.8.1-beta' } @{ prerelease='true'; channel='beta'; version='2026.9.8.1-beta' }
-    Assert-Outputs 'a hex tag is valid but not a beta by default' @{ Tag = 'v2026.9.8.2-A1B2' } @{ prerelease='false'; channel='release' }
-    Assert-Outputs 'any-suffix pattern makes the hex tag a prerelease' @{ Tag = 'v2026.9.8.2-A1B2'; PrereleasePattern = '^v\d{4}\.\d+\.\d+\.\d+-.+$' } @{ prerelease='true'; channel='beta' }
-    Assert-Outputs 'the fallback is used when no tag is given' @{ FallbackTag = 'v2026.9.8.0' } @{ tag='v2026.9.8.0' }
-    Assert-Outputs 'an explicit tag wins over the fallback' @{ Tag = 'v2026.9.8.1-beta'; FallbackTag = 'v2026.9.8.0' } @{ tag='v2026.9.8.1-beta' }
+    Assert-Output -Name 'a stable tag resolves' -Params @{ Tag = 'v2026.9.8.0' } -Expected @{
+        tag = 'v2026.9.8.0'; version = '2026.9.8.0'; prerelease = 'false'; channel = 'release'; sha = $head
+    }
+    Assert-Output -Name 'a beta tag is a prerelease' -Params @{ Tag = 'v2026.9.8.1-beta' } -Expected @{
+        prerelease = 'true'; channel = 'beta'; version = '2026.9.8.1-beta'
+    }
+    Assert-Output -Name 'a hex tag is valid but not a beta by default' -Params @{
+        Tag = 'v2026.9.8.2-A1B2'
+    } -Expected @{ prerelease = 'false'; channel = 'release' }
+    Assert-Output -Name 'any-suffix pattern makes the hex tag a prerelease' -Params @{
+        Tag = 'v2026.9.8.2-A1B2'; PrereleasePattern = '^v\d{4}\.\d+\.\d+\.\d+-.+$'
+    } -Expected @{ prerelease = 'true'; channel = 'beta' }
+    Assert-Output -Name 'the fallback is used when no tag is given' -Params @{
+        FallbackTag = 'v2026.9.8.0'
+    } -Expected @{ tag = 'v2026.9.8.0' }
+    Assert-Output -Name 'an explicit tag wins over the fallback' -Params @{
+        Tag = 'v2026.9.8.1-beta'; FallbackTag = 'v2026.9.8.0'
+    } -Expected @{ tag = 'v2026.9.8.1-beta' }
 
-    Assert-Fails 'a malformed tag is rejected' @{ Tag = 'v2026.9.8' }
-    Assert-Fails 'a branch name is rejected' @{ Tag = 'main' }
-    Assert-Fails 'no tag and no fallback fails' @{}
-    Assert-Fails 'a well-formed tag that does not exist is rejected' @{ Tag = 'v2026.9.9.0' }
-    Assert-Outputs 'the missing tag is allowed when existence is not required' @{ Tag = 'v2026.9.9.0'; RequireTagExists = $false } @{ tag='v2026.9.9.0'; sha='' }
-    Assert-Fails 'a suffix outside the tag pattern is rejected' @{ Tag = 'v2026.9.8.3-rc.1' }
+    Assert-Failure -Name 'a malformed tag is rejected' -Params @{ Tag = 'v2026.9.8' }
+    Assert-Failure -Name 'a branch name is rejected' -Params @{ Tag = 'main' }
+    Assert-Failure -Name 'no tag and no fallback fails' -Params @{}
+    Assert-Failure -Name 'a well-formed tag that does not exist is rejected' -Params @{ Tag = 'v2026.9.9.0' }
+    Assert-Output -Name 'the missing tag is allowed when existence is not required' -Params @{
+        Tag = 'v2026.9.9.0'; RequireTagExists = $false
+    } -Expected @{ tag = 'v2026.9.9.0'; sha = '' }
+    Assert-Failure -Name 'a suffix outside the tag pattern is rejected' -Params @{ Tag = 'v2026.9.8.3-rc.1' }
     $fresh = & pwsh -NoProfile -Command "& '$script:checker' -Tag 'v2026.9.8.0' -OutputPath '$script:outFile'" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "FAIL  a fresh session with no prior native command resolves -- exit $LASTEXITCODE : $fresh"
         $script:failures++
-    }
-    else {
+    } else {
         Write-Host 'ok    a fresh session with no prior native command resolves'
     }
 
-    Assert-Outputs 'a widened tag pattern accepts it' @{ Tag = 'v2026.9.8.3-rc.1'; TagPattern = '^v\d{4}\.\d+\.\d+\.\d+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$'; RequireTagExists = $false } @{ tag='v2026.9.8.3-rc.1' }
-}
-finally {
+    Assert-Output -Name 'a widened tag pattern accepts it' -Params @{
+        Tag              = 'v2026.9.8.3-rc.1'
+        TagPattern       = '^v\d{4}\.\d+\.\d+\.\d+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$'
+        RequireTagExists = $false
+    } -Expected @{ tag = 'v2026.9.8.3-rc.1' }
+} finally {
     Pop-Location -ErrorAction SilentlyContinue
     if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 }

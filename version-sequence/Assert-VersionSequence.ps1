@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -10,9 +11,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$suffix = if ($PrereleaseSuffix) { "(-(?:$PrereleaseSuffix))?" } else { '' }
-
 function Get-ExpectedRevision {
+    [CmdletBinding()]
+    [OutputType([int])]
     param([string] $DateStamp, [string] $ExcludeTag)
 
     $pattern = "^v$([regex]::Escape($DateStamp))\.(\d+)(-.+)?$"
@@ -29,6 +30,8 @@ function Get-ExpectedRevision {
     return $highest + 1
 }
 
+$suffix = if ($PrereleaseSuffix) { "(-(?:$PrereleaseSuffix))?" } else { '' }
+
 $resolvedRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 Push-Location $resolvedRoot
 try {
@@ -42,12 +45,14 @@ try {
     $expected = Get-ExpectedRevision -DateStamp $dateStamp -ExcludeTag $Tag
 
     if ($actual -ne $expected) {
-        Write-Host "::error::Release tag $Tag uses revision $actual, expected $expected for $dateStamp. Use .0 when no same-day tag exists; otherwise increment the highest same-day release or prerelease revision by one."
+        Write-Host ("::error::Release tag $Tag uses revision $actual, expected $expected for $dateStamp. " +
+            'Use .0 when no same-day tag exists; otherwise increment the highest same-day release or prerelease ' +
+            'revision by one.')
         exit 1
     }
 
     Write-Host "Release tag $Tag uses the expected same-day revision $expected."
-}
-finally {
+} finally {
     Pop-Location
 }
+exit 0

@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -19,7 +20,23 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$files = @($Paths | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
+function Get-Base64 {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string] $Path)
+    return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path).Path))
+}
+
+function Write-Failure {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param([string] $Message, [bool] $WarnOnFailure)
+    if ($WarnOnFailure) { Write-Host "::warning::$Message"; return 0 }
+    Write-Host "::error::$Message"
+    return 1
+}
+
+$files = @(foreach ($p in $Paths) { if ($p -and $p.Trim()) { $p.Trim() } })
 if (-not $files) { Write-Host 'No paths given; nothing to commit.'; exit 0 }
 
 foreach ($f in $files) {
@@ -29,30 +46,23 @@ foreach ($f in $files) {
     }
 }
 
-function Get-Base64 {
-    param([string] $Path)
-    return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path).Path))
-}
-
-function Fail {
-    param([string] $Message)
-    if ($WarnOnFailure) { Write-Host "::warning::$Message"; exit 0 }
-    Write-Host "::error::$Message"
-    exit 1
-}
-
 if ($SkipIfUnchanged -and -not $DryRun) {
-    # Compare against the branch through the API rather than origin/<branch>: a tag-triggered
-    # checkout often has no local ref for the branch being committed to.
     $changed = $false
     foreach ($f in $files) {
         $remotePath = $f.Replace([char]92, [char]47)
         $encoded = & gh api "repos/$Repository/contents/$remotePath`?ref=$Branch" --jq '.content' 2>$null
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encoded)) { $changed = $true; $global:LASTEXITCODE = 0; break }
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encoded)) {
+            $changed = $true
+            $global:LASTEXITCODE = 0
+            break
+        }
         $global:LASTEXITCODE = 0
         $remoteBytes = [Convert]::FromBase64String((($encoded -join '') -replace '\s', ''))
         $localBytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $f).Path)
-        if ([Convert]::ToBase64String($remoteBytes) -ne [Convert]::ToBase64String($localBytes)) { $changed = $true; break }
+        if ([Convert]::ToBase64String($remoteBytes) -ne [Convert]::ToBase64String($localBytes)) {
+            $changed = $true
+            break
+        }
     }
     if (-not $changed) { Write-Host "Every file already matches $Branch; nothing to commit."; exit 0 }
 }
@@ -63,18 +73,22 @@ if ($DryRun) {
 } else {
     $expectedOid = (& gh api "repos/$Repository/branches/$Branch" --jq '.commit.sha')
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($expectedOid)) {
-        Fail "Could not read the head of $Branch on $Repository."
+        exit (Write-Failure -Message "Could not read the head of $Branch on $Repository." -WarnOnFailure $WarnOnFailure)
     }
     $expectedOid = $expectedOid.Trim()
 }
 
-$additions = @($files | ForEach-Object { @{ path = $_.Replace([char]92, [char]47); contents = (Get-Base64 -Path $_) } })
+$additions = @(foreach ($f in $files) {
+        @{ path = $f.Replace([char]92, [char]47); contents = (Get-Base64 -Path $f) }
+    })
 
 $message = @{ headline = $Headline }
 if ($Body) { $message['body'] = $Body }
 
+$mutation = 'mutation($input: CreateCommitOnBranchInput!) { ' +
+'createCommitOnBranch(input: $input) { commit { oid url } } }'
 $payload = @{
-    query     = 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }'
+    query     = $mutation
     variables = @{
         input = @{
             branch          = @{ repositoryNameWithOwner = $Repository; branchName = $Branch }
@@ -90,27 +104,38 @@ if ($DryRun) {
     exit 0
 }
 
-$payloadPath = Join-Path ([System.IO.Path]::GetTempPath()) ("commit-on-branch-" + [System.Guid]::NewGuid().ToString('N') + '.json')
+$payloadName = 'commit-on-branch-' + [System.Guid]::NewGuid().ToString('N') + '.json'
+$payloadPath = Join-Path ([System.IO.Path]::GetTempPath()) $payloadName
 [System.IO.File]::WriteAllText($payloadPath, $payload, (New-Object System.Text.UTF8Encoding($false)))
 
 try {
     $response = & gh api graphql --input $payloadPath
-    if ($LASTEXITCODE -ne 0) { Fail 'createCommitOnBranch failed.' }
+    if ($LASTEXITCODE -ne 0) {
+        exit (Write-Failure -Message 'createCommitOnBranch failed.' -WarnOnFailure $WarnOnFailure)
+    }
     $result = $response | ConvertFrom-Json
     if ($result.PSObject.Properties.Name -contains 'errors' -and $result.errors) {
-        Fail "createCommitOnBranch returned GraphQL errors: $($result.errors | ConvertTo-Json -Compress)"
+        $errors = $result.errors | ConvertTo-Json -Compress -Depth 2
+        $text = "createCommitOnBranch returned GraphQL errors: $errors"
+        exit (Write-Failure -Message $text -WarnOnFailure $WarnOnFailure)
     }
     $oid = [string] $result.data.createCommitOnBranch.commit.oid
-    if ([string]::IsNullOrWhiteSpace($oid)) { Fail 'createCommitOnBranch returned no commit oid.' }
+    if ([string]::IsNullOrWhiteSpace($oid)) {
+        exit (Write-Failure -Message 'createCommitOnBranch returned no commit oid.' -WarnOnFailure $WarnOnFailure)
+    }
     Write-Host "Committed $($files -join ', ') to $Branch as $oid"
 
     if ($VerifySignature) {
         $verified = & gh api "repos/$Repository/commits/$oid" --jq '.commit.verification.verified'
-        if ($LASTEXITCODE -ne 0) { Fail "Could not read verification state for $oid." }
-        if ("$verified".Trim() -ne 'true') { Fail "Commit $oid is not verified (got: $verified)." }
+        if ($LASTEXITCODE -ne 0) {
+            exit (Write-Failure -Message "Could not read verification state for $oid." -WarnOnFailure $WarnOnFailure)
+        }
+        if ("$verified".Trim() -ne 'true') {
+            exit (Write-Failure -Message "Commit $oid is not verified (got: $verified)." -WarnOnFailure $WarnOnFailure)
+        }
         Write-Host 'Verification: ok'
     }
-}
-finally {
+} finally {
     Remove-Item -LiteralPath $payloadPath -Force -ErrorAction SilentlyContinue
 }
+exit 0

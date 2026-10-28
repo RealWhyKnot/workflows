@@ -1,23 +1,24 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$checker = Join-Path $PSScriptRoot 'Assert-VersionSequence.ps1'
-$script:failures = 0
-$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("version-sequence-" + [System.Guid]::NewGuid().ToString('N'))
-
 function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory = $true)][string[]] $Arguments)
     $out = & git @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed: $out" }
 }
 
 function Assert-Result {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [bool] $ShouldPass, [string] $ExpectedText = '')
-    $out = (& $checker @Params *>&1) -join "`n"
+    $out = (& $script:checker @Params *>&1) -join "`n"
     $passed = $LASTEXITCODE -eq 0
     if ($passed -ne $ShouldPass) {
         Write-Host "FAIL  $Name -- expected $(if ($ShouldPass) { 'pass' } else { 'failure' }), got exit $LASTEXITCODE"
@@ -34,45 +35,70 @@ function Assert-Result {
     Write-Host "ok    $Name"
 }
 
+$script:checker = Join-Path $PSScriptRoot 'Assert-VersionSequence.ps1'
+$script:failures = 0
+$sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('version-sequence-' + [System.Guid]::NewGuid().ToString('N'))
+
 try {
-    New-Item -ItemType Directory -Path $sandbox -Force | Out-Null
+    $null = New-Item -ItemType Directory -Path $sandbox -Force
     Push-Location $sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
     Invoke-Git @('config', 'commit.gpgsign', 'false')
-    Set-Content -LiteralPath (Join-Path $sandbox 'a.txt') -Value 'seed'
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'a.txt'), 'seed' + [Environment]::NewLine)
     Invoke-Git @('add', '-A')
     Invoke-Git @('commit', '-m', 'chore: seed')
 
-    Assert-Result 'first tag of the day expects .0' @{ Tag = 'v2026.9.8.0' } $true
-    Assert-Result 'first tag of the day rejects .1' @{ Tag = 'v2026.9.8.1' } $false 'expected 0'
-    Assert-Result 'a malformed tag is rejected' @{ Tag = 'v2026.9.8' } $false 'must be vYYYY.M.D.N'
-    Assert-Result 'a non-v tag is rejected' @{ Tag = '2026.9.8.0' } $false 'must be vYYYY.M.D.N'
+    Assert-Result -Name 'first tag of the day expects .0' -Params @{ Tag = 'v2026.9.8.0' } -ShouldPass $true
+    Assert-Result -Name 'first tag of the day rejects .1' -Params @{
+        Tag = 'v2026.9.8.1'
+    } -ShouldPass $false -ExpectedText 'expected 0'
+    Assert-Result -Name 'a malformed tag is rejected' -Params @{
+        Tag = 'v2026.9.8'
+    } -ShouldPass $false -ExpectedText 'must be vYYYY.M.D.N'
+    Assert-Result -Name 'a non-v tag is rejected' -Params @{
+        Tag = '2026.9.8.0'
+    } -ShouldPass $false -ExpectedText 'must be vYYYY.M.D.N'
 
     Invoke-Git @('tag', 'v2026.9.8.0')
-    Assert-Result 'second tag of the day expects .1' @{ Tag = 'v2026.9.8.1' } $true
-    Assert-Result 'the tag under test is excluded, so re-checking it still passes' @{ Tag = 'v2026.9.8.0' } $true
-    Assert-Result 'a different day is unaffected' @{ Tag = 'v2026.9.9.0' } $true
+    Assert-Result -Name 'second tag of the day expects .1' -Params @{ Tag = 'v2026.9.8.1' } -ShouldPass $true
+    Assert-Result -Name 'the tag under test is excluded, so re-checking it still passes' -Params @{
+        Tag = 'v2026.9.8.0'
+    } -ShouldPass $true
+    Assert-Result -Name 'a different day is unaffected' -Params @{ Tag = 'v2026.9.9.0' } -ShouldPass $true
 
     Invoke-Git @('tag', 'v2026.9.8.1-A1B2')
-    Assert-Result 'a hex prerelease counts toward the next revision' @{ Tag = 'v2026.9.8.2' } $true
-    Assert-Result 'the hex prerelease still counts under a beta-only suffix' @{ Tag = 'v2026.9.8.2'; PrereleaseSuffix = 'beta' } $true
-    Assert-Result 'a beta-only suffix cannot reuse the hex prerelease revision' @{ Tag = 'v2026.9.8.1'; PrereleaseSuffix = 'beta' } $false 'expected 2'
+    Assert-Result -Name 'a hex prerelease counts toward the next revision' -Params @{
+        Tag = 'v2026.9.8.2'
+    } -ShouldPass $true
+    Assert-Result -Name 'the hex prerelease still counts under a beta-only suffix' -Params @{
+        Tag = 'v2026.9.8.2'; PrereleaseSuffix = 'beta'
+    } -ShouldPass $true
+    Assert-Result -Name 'a beta-only suffix cannot reuse the hex prerelease revision' -Params @{
+        Tag = 'v2026.9.8.1'; PrereleaseSuffix = 'beta'
+    } -ShouldPass $false -ExpectedText 'expected 2'
 
     Invoke-Git @('tag', 'v2026.9.8.2-beta')
-    Assert-Result 'a beta counts under the default suffix' @{ Tag = 'v2026.9.8.3' } $true
-    Assert-Result 'a beta counts under a beta-only suffix' @{ Tag = 'v2026.9.8.3'; PrereleaseSuffix = 'beta' } $true
-    Assert-Result 'the permissive suffix accepts a dotted prerelease' @{ Tag = 'v2026.9.8.3-rc.1'; PrereleaseSuffix = '[A-Za-z0-9][A-Za-z0-9.-]*' } $true
-    Assert-Result 'the default suffix rejects a dotted prerelease' @{ Tag = 'v2026.9.8.3-rc.1' } $false 'must be vYYYY.M.D.N'
+    Assert-Result -Name 'a beta counts under the default suffix' -Params @{ Tag = 'v2026.9.8.3' } -ShouldPass $true
+    Assert-Result -Name 'a beta counts under a beta-only suffix' -Params @{
+        Tag = 'v2026.9.8.3'; PrereleaseSuffix = 'beta'
+    } -ShouldPass $true
+    Assert-Result -Name 'the permissive suffix accepts a dotted prerelease' -Params @{
+        Tag = 'v2026.9.8.3-rc.1'; PrereleaseSuffix = '[A-Za-z0-9][A-Za-z0-9.-]*'
+    } -ShouldPass $true
+    Assert-Result -Name 'the default suffix rejects a dotted prerelease' -Params @{
+        Tag = 'v2026.9.8.3-rc.1'
+    } -ShouldPass $false -ExpectedText 'must be vYYYY.M.D.N'
 
     $other = Join-Path $sandbox 'sub'
-    New-Item -ItemType Directory -Path $other -Force | Out-Null
+    $null = New-Item -ItemType Directory -Path $other -Force
     Push-Location $other
-    Assert-Result 'RepoRoot is honoured from another directory' @{ Tag = 'v2026.9.9.0'; RepoRoot = $sandbox } $true
+    Assert-Result -Name 'RepoRoot is honoured from another directory' -Params @{
+        Tag = 'v2026.9.9.0'; RepoRoot = $sandbox
+    } -ShouldPass $true
     Pop-Location
-}
-finally {
+} finally {
     Pop-Location -ErrorAction SilentlyContinue
     if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 }

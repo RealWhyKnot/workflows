@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve tag
+        id: tag
+        uses: ./resolve-tag
+
+      - name: Check the day's sequence
+        uses: ./version-sequence
+        with:
+          tag: ${{ steps.tag.outputs.tag }}
+
+      - name: Find the previous release
+        id: previous
+        shell: pwsh
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/ReleasePlan.psm1')
+          $previous = Get-PreviousRelease -Root $env:GITHUB_WORKSPACE -Tag $env:TAG
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "tag=$previous`n")
+
+      - name: Build release notes
+        id: notes
+        uses: ./release-notes
+        with:
+          tag: ${{ steps.tag.outputs.tag }}
+          previous-tag: ${{ steps.previous.outputs.tag }}
+
+      - name: Publish
+        uses: ./publish-release
+        with:
+          tag: ${{ steps.tag.outputs.tag }}
+          notes-file: ${{ steps.notes.outputs.file }}
+          prerelease: ${{ steps.tag.outputs.prerelease }}

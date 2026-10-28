@@ -1,21 +1,24 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$script:publisher = Join-Path $PSScriptRoot 'Publish-Release.ps1'
-$script:failures = 0
-
 function Get-Plan {
+    [CmdletBinding()]
+    [OutputType([string])]
     param([hashtable] $Params)
     $p = @{} + $Params
     $p['DryRun'] = $true
-    return ((& $script:publisher @p *>&1) | ForEach-Object { "$_" }) -join "`n"
+    $lines = foreach ($item in & $script:publisher @p *>&1) { "$item" }
+    return $lines -join "`n"
 }
 
 function Assert-Plan {
+    [CmdletBinding()]
+    [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [string[]] $Contains = @(), [string[]] $NotContains = @())
     $plan = Get-Plan -Params $Params
     foreach ($c in $Contains) {
@@ -31,145 +34,173 @@ function Assert-Plan {
     Write-Host "ok    $Name"
 }
 
-$base = @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
-
-$script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("publish-release-" + [System.Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path (Join-Path $script:sandbox 'dist') -Force | Out-Null
-Set-Content -LiteralPath (Join-Path $script:sandbox 'dist/one.whl') -Value 'x'
-Set-Content -LiteralPath (Join-Path $script:sandbox 'dist/two.tar.gz') -Value 'y'
-Push-Location $script:sandbox
-
-Assert-Plan 'a plain release names the tag and notes file' $base `
-    @('gh release create v2026.9.8.0', '--title v2026.9.8.0', '--notes-file notes.md') `
-    @('--draft', '--prerelease', '--repo', '--target')
-
-Assert-Plan 'a prerelease adds both prerelease flags' ($base + @{ Prerelease = $true }) `
-    @('--prerelease', '--latest=false')
-
-Assert-Plan 'assets are appended before the flags' ($base + @{ Assets = @('a.zip', 'a.zip.sha256') }) `
-    @('gh release create v2026.9.8.0 a.zip a.zip.sha256 --title')
-
-Assert-Plan 'blank asset entries are dropped' ($base + @{ Assets = @('a.zip', '', '  ', 'b.tsv') }) `
-    @('create v2026.9.8.0 a.zip b.tsv --title')
-
-Assert-Plan 'an explicit title is kept' ($base + @{ Title = 'My App v2026.9.8.0' }) `
-    @('--title My App v2026.9.8.0')
-
-Assert-Plan 'repository and target are passed through' ($base + @{ Repository = 'o/r'; Target = 'abc123' }) `
-    @('--repo o/r', '--target abc123')
-
-Assert-Plan 'draft-first creates a draft then promotes it' ($base + @{ DraftFirst = $true }) `
-    @('--draft', 'gh release view v2026.9.8.0 --json assets,isDraft', 'gh release edit v2026.9.8.0 --draft=false')
-
-Assert-Plan 'draft-first and prerelease combine' ($base + @{ DraftFirst = $true; Prerelease = $true }) `
-    @('--draft', '--prerelease', '--latest=false')
-
-Assert-Plan 'a plain release looks the tag up before creating it' $base `
-    @('gh release view v2026.9.8.0 --json id', 'gh release create v2026.9.8.0') `
-    @('gh release edit', 'gh release upload')
-
-Assert-Plan 'an existing release is edited, not created' ($base + @{ AssumeExisting = $true }) `
-    @('gh release edit v2026.9.8.0 --title v2026.9.8.0 --notes-file notes.md') `
-    @('gh release create', '--draft')
-
-Assert-Plan 'an existing release re-uploads assets over the old ones' `
-    ($base + @{ AssumeExisting = $true; Assets = @('a.zip', 'b.tsv') }) `
-    @('gh release upload v2026.9.8.0 a.zip b.tsv --clobber')
-
-Assert-Plan 'an existing release with no assets skips the upload' ($base + @{ AssumeExisting = $true }) `
-    @() @('gh release upload')
-
-Assert-Plan 'an existing prerelease keeps both prerelease flags on edit' `
-    ($base + @{ AssumeExisting = $true; Prerelease = $true }) `
-    @('gh release edit v2026.9.8.0', '--prerelease', '--latest=false')
-
-Assert-Plan 'an existing release passes the repository to edit and upload' `
-    ($base + @{ AssumeExisting = $true; Repository = 'o/r'; Assets = @('a.zip') }) `
-    @('gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r')
-
-Assert-Plan 'the lookup asks whether the release is still a draft' $base `
-    @('gh release view v2026.9.8.0 --json id,isDraft')
-
-Assert-Plan 'an existing draft is checked and promoted on a re-run' `
-    ($base + @{ AssumeExisting = $true; AssumeDraft = $true; Assets = @('a.zip'); Repository = 'o/r' }) `
-    @('gh release upload v2026.9.8.0 a.zip --clobber --repo o/r', 'gh release view v2026.9.8.0 --json assets,isDraft --repo o/r', 'gh release edit v2026.9.8.0 --draft=false --repo o/r') `
-    @('gh release create')
-
-Assert-Plan 'an existing published release is not promoted again' `
-    ($base + @{ AssumeExisting = $true; DraftFirst = $true }) `
-    @('gh release edit v2026.9.8.0 --title') @('--draft=false', 'gh release create')
-
-$global:ghCalls = @()
 function gh {
-    $global:ghCalls += ($args -join ' ')
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Rest)
+    $ghCallLog.Add($Rest -join ' ')
     $global:LASTEXITCODE = 0
-    if ($args -contains 'id,isDraft') { return '{"id":"RE_1","isDraft":true}' }
-    if ($args -contains 'assets,isDraft') { return '{"assets":[{"name":"a.zip"}],"isDraft":true}' }
+    if ($Rest -contains 'id,isDraft') {
+        if ($ghReleaseIsDraft) { return '{"id":"RE_1","isDraft":true}' }
+        return '{"id":"RE_1","isDraft":false}'
+    }
+    if ($Rest -contains 'assets,isDraft') { return '{"assets":[{"name":"a.zip"}],"isDraft":true}' }
     return ''
 }
-try {
-    & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Assets @('a.zip') -DraftFirst $true *> $null
-    $rerun = $global:ghCalls -join "`n"
-} finally {
-    Remove-Item function:gh
-    Remove-Variable -Scope Global -Name ghCalls
-}
+
+$script:publisher = Join-Path $PSScriptRoot 'Publish-Release.ps1'
+$script:failures = 0
+$ghCallLog = [System.Collections.Generic.List[string]]::new()
+$ghReleaseIsDraft = $false
+
+$base = @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
+
+$sandboxName = 'publish-release-' + [System.Guid]::NewGuid().ToString('N')
+$script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) $sandboxName
+$null = New-Item -ItemType Directory -Path (Join-Path $script:sandbox 'dist') -Force
+[System.IO.File]::WriteAllText((Join-Path $script:sandbox 'dist/one.whl'), 'x' + [Environment]::NewLine)
+[System.IO.File]::WriteAllText((Join-Path $script:sandbox 'dist/two.tar.gz'), 'y' + [Environment]::NewLine)
+Push-Location $script:sandbox
+
+Assert-Plan -Name 'a plain release names the tag and notes file' -Params $base -Contains @(
+    'gh release create v2026.9.8.0', '--title v2026.9.8.0', '--notes-file notes.md'
+) -NotContains @('--draft', '--prerelease', '--repo', '--target')
+
+Assert-Plan -Name 'a prerelease adds both prerelease flags' -Params ($base + @{ Prerelease = $true }) -Contains @(
+    '--prerelease', '--latest=false'
+)
+
+Assert-Plan -Name 'assets are appended before the flags' -Params ($base + @{
+        Assets = @('a.zip', 'a.zip.sha256')
+    }) -Contains @('gh release create v2026.9.8.0 a.zip a.zip.sha256 --title')
+
+Assert-Plan -Name 'blank asset entries are dropped' -Params ($base + @{
+        Assets = @('a.zip', '', '  ', 'b.tsv')
+    }) -Contains @('create v2026.9.8.0 a.zip b.tsv --title')
+
+Assert-Plan -Name 'an explicit title is kept' -Params ($base + @{ Title = 'My App v2026.9.8.0' }) -Contains @(
+    '--title My App v2026.9.8.0'
+)
+
+Assert-Plan -Name 'repository and target are passed through' -Params ($base + @{
+        Repository = 'o/r'; Target = 'abc123'
+    }) -Contains @('--repo o/r', '--target abc123')
+
+Assert-Plan -Name 'draft-first creates a draft then promotes it' -Params ($base + @{ DraftFirst = $true }) -Contains @(
+    '--draft', 'gh release view v2026.9.8.0 --json assets,isDraft', 'gh release edit v2026.9.8.0 --draft=false'
+)
+
+Assert-Plan -Name 'draft-first and prerelease combine' -Params ($base + @{
+        DraftFirst = $true; Prerelease = $true
+    }) -Contains @('--draft', '--prerelease', '--latest=false')
+
+Assert-Plan -Name 'a plain release looks the tag up before creating it' -Params $base -Contains @(
+    'gh release view v2026.9.8.0 --json id', 'gh release create v2026.9.8.0'
+) -NotContains @('gh release edit', 'gh release upload')
+
+Assert-Plan -Name 'an existing release is edited, not created' -Params ($base + @{
+        AssumeExisting = $true
+    }) -Contains @(
+    'gh release edit v2026.9.8.0 --title v2026.9.8.0 --notes-file notes.md'
+) -NotContains @('gh release create', '--draft')
+
+Assert-Plan -Name 'an existing release re-uploads assets over the old ones' -Params ($base + @{
+        AssumeExisting = $true; Assets = @('a.zip', 'b.tsv')
+    }) -Contains @('gh release upload v2026.9.8.0 a.zip b.tsv --clobber')
+
+Assert-Plan -Name 'an existing release with no assets skips the upload' -Params ($base + @{
+        AssumeExisting = $true
+    }) -NotContains @('gh release upload')
+
+Assert-Plan -Name 'an existing prerelease keeps both prerelease flags on edit' -Params ($base + @{
+        AssumeExisting = $true; Prerelease = $true
+    }) -Contains @('gh release edit v2026.9.8.0', '--prerelease', '--latest=false')
+
+Assert-Plan -Name 'an existing release passes the repository to edit and upload' -Params ($base + @{
+        AssumeExisting = $true; Repository = 'o/r'; Assets = @('a.zip')
+    }) -Contains @(
+    'gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r'
+)
+
+Assert-Plan -Name 'the lookup asks whether the release is still a draft' -Params $base -Contains @(
+    'gh release view v2026.9.8.0 --json id,isDraft'
+)
+
+Assert-Plan -Name 'an existing draft is checked and promoted on a re-run' -Params ($base + @{
+        AssumeExisting = $true; AssumeDraft = $true; Assets = @('a.zip'); Repository = 'o/r'
+    }) -Contains @(
+    'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r'
+    'gh release view v2026.9.8.0 --json assets,isDraft --repo o/r'
+    'gh release edit v2026.9.8.0 --draft=false --repo o/r'
+) -NotContains @('gh release create')
+
+Assert-Plan -Name 'an existing published release is not promoted again' -Params ($base + @{
+        AssumeExisting = $true; DraftFirst = $true
+    }) -Contains @('gh release edit v2026.9.8.0 --title') -NotContains @('--draft=false', 'gh release create')
+
+$ghCallLog.Clear()
+$ghReleaseIsDraft = $true
+& $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Assets @('a.zip') -DraftFirst $true *> $null
+$rerun = $ghCallLog -join "`n"
 if ($rerun -match [regex]::Escape('release edit v2026.9.8.0 --draft=false') -and $rerun -notmatch 'release create') {
     Write-Host 'ok    a re-run finds the draft left by the last run and promotes it'
 } else {
-    Write-Host 'FAIL  a re-run finds the draft left by the last run and promotes it'; Write-Host "        $rerun"; $script:failures++
+    Write-Host 'FAIL  a re-run finds the draft left by the last run and promotes it'
+    Write-Host "        $rerun"
+    $script:failures++
 }
 
-Assert-Plan 'delete-existing still creates rather than edits' `
-    ($base + @{ AssumeExisting = $true; DeleteExisting = $true }) `
-    @('gh release delete v2026.9.8.0 --yes', 'gh release create v2026.9.8.0') `
-    @('gh release edit')
+Assert-Plan -Name 'delete-existing still creates rather than edits' -Params ($base + @{
+        AssumeExisting = $true; DeleteExisting = $true
+    }) -Contains @('gh release delete v2026.9.8.0 --yes', 'gh release create v2026.9.8.0') -NotContains @(
+    'gh release edit'
+)
 
-Assert-Plan 'delete-existing deletes in the target repository' `
-    ($base + @{ AssumeExisting = $true; DeleteExisting = $true; Repository = 'o/r' }) `
-    @('gh release delete v2026.9.8.0 --yes --repo o/r', 'gh release create v2026.9.8.0 --repo o/r')
+Assert-Plan -Name 'delete-existing deletes in the target repository' -Params ($base + @{
+        AssumeExisting = $true; DeleteExisting = $true; Repository = 'o/r'
+    }) -Contains @('gh release delete v2026.9.8.0 --yes --repo o/r', 'gh release create v2026.9.8.0 --repo o/r')
 
-$global:ghCalls = @()
-function gh {
-    $global:ghCalls += ($args -join ' ')
-    $global:LASTEXITCODE = 0
-    if ($args -contains 'id,isDraft') { return '{"id":"RE_1","isDraft":false}' }
-    return ''
-}
-try {
-    & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Repository 'o/r' -DeleteExisting $true *> $null
-    $deleteCall = @($global:ghCalls | Where-Object { $_ -match '^release delete' })
-} finally {
-    Remove-Item function:gh
-    Remove-Variable -Scope Global -Name ghCalls
-}
+$ghCallLog.Clear()
+$ghReleaseIsDraft = $false
+& $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Repository 'o/r' -DeleteExisting $true *> $null
+$deleteCall = @(foreach ($call in $ghCallLog) { if ($call -match '^release delete') { $call } })
 if ($deleteCall.Count -eq 1 -and $deleteCall[0] -eq 'release delete v2026.9.8.0 --yes --repo o/r') {
     Write-Host 'ok    a real delete names the target repository'
 } else {
-    Write-Host 'FAIL  a real delete names the target repository'; Write-Host "        $($deleteCall -join ' | ')"; $script:failures++
+    Write-Host 'FAIL  a real delete names the target repository'
+    Write-Host "        $($deleteCall -join ' | ')"
+    $script:failures++
 }
 
-Assert-Plan 'delete-existing checks for a release first' ($base + @{ DeleteExisting = $true }) `
-    @('gh release view v2026.9.8.0 --json id')
+Assert-Plan -Name 'delete-existing checks for a release first' -Params ($base + @{
+        DeleteExisting = $true
+    }) -Contains @(
+    'gh release view v2026.9.8.0 --json id'
+)
 
-Assert-Plan 'digest verification is planned when both inputs are given' `
-    ($base + @{ VerifyAsset = 'a.zip'; VerifySha256 = 'deadbeef'; Repository = 'o/r' }) `
-    @('gh api repos/o/r/releases/tags/v2026.9.8.0', 'expect a.zip sha256:deadbeef')
+Assert-Plan -Name 'digest verification is planned when both inputs are given' -Params ($base + @{
+        VerifyAsset = 'a.zip'; VerifySha256 = 'deadbeef'; Repository = 'o/r'
+    }) -Contains @('gh api repos/o/r/releases/tags/v2026.9.8.0', 'expect a.zip sha256:deadbeef')
 
-Assert-Plan 'digest verification is skipped without a hash' ($base + @{ VerifyAsset = 'a.zip' }) `
-    @() @('gh api')
+Assert-Plan -Name 'digest verification is skipped without a hash' -Params ($base + @{
+        VerifyAsset = 'a.zip'
+    }) -NotContains @('gh api')
 
-Assert-Plan 'the draft view passes the repository through' ($base + @{ DraftFirst = $true; Repository = 'o/r' }) `
-    @('gh release view v2026.9.8.0 --json assets,isDraft --repo o/r')
+Assert-Plan -Name 'the draft view passes the repository through' -Params ($base + @{
+        DraftFirst = $true; Repository = 'o/r'
+    }) -Contains @('gh release view v2026.9.8.0 --json assets,isDraft --repo o/r')
 
-Assert-Plan 'a glob expands to the matching files' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/*') } `
-    @('one.whl', 'two.tar.gz')
+Assert-Plan -Name 'a glob expands to the matching files' -Params @{
+    Tag = 'v2026.9.8.0'; Assets = @('dist/*')
+} -Contains @('one.whl', 'two.tar.gz')
 
-Assert-Plan 'a glob matching nothing contributes no assets' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/nope/*') } `
-    @('gh release create v2026.9.8.0 --title')
+Assert-Plan -Name 'a glob matching nothing contributes no assets' -Params @{
+    Tag = 'v2026.9.8.0'; Assets = @('dist/nope/*')
+} -Contains @('gh release create v2026.9.8.0 --title')
 
-Assert-Plan 'literal paths are not globbed' @{ Tag = 'v2026.9.8.0'; Assets = @('dist/one.whl') } `
-    @('create v2026.9.8.0 dist/one.whl --title')
+Assert-Plan -Name 'literal paths are not globbed' -Params @{
+    Tag = 'v2026.9.8.0'; Assets = @('dist/one.whl')
+} -Contains @('create v2026.9.8.0 dist/one.whl --title')
 
 Pop-Location
 Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue

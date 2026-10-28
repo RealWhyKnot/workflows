@@ -17,10 +17,12 @@ Set-StrictMode -Version Latest
 
 $root = (Resolve-Path -LiteralPath $RepoRoot).Path
 $target = Join-Path $root '.githooks'
-New-Item -ItemType Directory -Path $target -Force | Out-Null
+$null = New-Item -ItemType Directory -Path $target -Force
 
-$hooks = @('commit-msg')
-if (-not $NoStamp) { $hooks += 'prepare-commit-msg' }
+$hooks = @(
+    'commit-msg'
+    if (-not $NoStamp) { 'prepare-commit-msg' }
+)
 
 foreach ($hook in $hooks) {
     $source = Join-Path $PSScriptRoot $hook
@@ -37,14 +39,15 @@ foreach ($hook in $hooks) {
     Write-Host "Installed $hook"
 }
 
-$lines = @()
-if ($NoStamp) { $lines += 'CHECK_STAMP=0' }
-if ($StampPattern) { $lines += "STAMP_PATTERN='$StampPattern'" }
-if ($CheckConventional) { $lines += 'CHECK_CONVENTIONAL=1' }
-if ($ConventionalPattern) { $lines += "CONVENTIONAL_PATTERN='$ConventionalPattern'" }
-if ($ForbiddenBodyPattern) { $lines += "FORBIDDEN_BODY_PATTERN='$ForbiddenBodyPattern'" }
-if ($VersionFile) { $lines += "VERSION_FILE='$VersionFile'" }
-if ($VersionInGitDir) { $lines += 'VERSION_IN_GITDIR=1' }
+$lines = @(
+    if ($NoStamp) { 'CHECK_STAMP=0' }
+    if ($StampPattern) { "STAMP_PATTERN='$StampPattern'" }
+    if ($CheckConventional) { 'CHECK_CONVENTIONAL=1' }
+    if ($ConventionalPattern) { "CONVENTIONAL_PATTERN='$ConventionalPattern'" }
+    if ($ForbiddenBodyPattern) { "FORBIDDEN_BODY_PATTERN='$ForbiddenBodyPattern'" }
+    if ($VersionFile) { "VERSION_FILE='$VersionFile'" }
+    if ($VersionInGitDir) { 'VERSION_IN_GITDIR=1' }
+)
 
 $configPath = Join-Path $target 'hook-config'
 if ($lines) {
@@ -59,3 +62,4 @@ if ($lines) {
 & git -C $root config core.hooksPath .githooks
 if ($LASTEXITCODE -ne 0) { throw "Could not set core.hooksPath in $root" }
 Write-Host 'core.hooksPath is now .githooks'
+exit 0

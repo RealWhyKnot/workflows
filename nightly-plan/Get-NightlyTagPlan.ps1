@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [string] $Timezone = 'America/Chicago',
@@ -14,16 +15,22 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Set-Output {
-    param([hashtable] $Values)
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([hashtable] $Values, [string] $OutputPath)
     foreach ($k in $Values.Keys) {
         Write-Host "$k=$($Values[$k])"
-        if ($OutputPath) { Add-Content -LiteralPath $OutputPath -Value "$k=$($Values[$k])" }
+        if ($OutputPath) {
+            $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+            [System.IO.File]::AppendAllText($path, "$k=$($Values[$k])" + [Environment]::NewLine)
+        }
     }
 }
 
-$gate = & (Join-Path $PSScriptRoot '../beta-gate/Get-BetaGate.ps1') -TagGlob $TagGlob -IgnorePaths $IgnorePaths -ReleaseTypes $ReleaseTypes -OutputPath '' | Select-Object -Last 1
+$gateArgs = @{ TagGlob = $TagGlob; IgnorePaths = $IgnorePaths; ReleaseTypes = $ReleaseTypes; OutputPath = '' }
+$gate = & (Join-Path $PSScriptRoot '../beta-gate/Get-BetaGate.ps1') @gateArgs | Select-Object -Last 1
 if (-not $gate.HasChanges) {
-    Set-Output @{ has_changes = 'false'; next_tag = '' }
+    Set-Output -Values @{ has_changes = 'false'; next_tag = '' } -OutputPath $OutputPath
     exit 0
 }
 
@@ -45,4 +52,5 @@ $next = $highest + 1
 $tag = if ($Suffix) { "v$today.$next-$Suffix" } else { "v$today.$next" }
 
 Write-Host "Tagging $tag at $head"
-Set-Output @{ has_changes = 'true'; next_tag = $tag }
+Set-Output -Values @{ has_changes = 'true'; next_tag = $tag } -OutputPath $OutputPath
+exit 0

@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [string] $Version = '3.12',
@@ -34,8 +35,7 @@ if (-not $Install) {
 $have = & $GetVersion $Exe
 if ($have -eq $want) {
     Write-Host "NSIS $have is already installed."
-}
-else {
+} else {
     $from = if ($have) { $have } else { 'nothing' }
     Write-Host "Found $from, installing NSIS $want."
     & $Install "$Version.0"
@@ -43,4 +43,9 @@ else {
     if ($have -ne $want) { throw "Expected NSIS $want after installing, found '$have'." }
 }
 
-if ($PathFile) { Add-Content -LiteralPath $PathFile -Value $Exe.Substring(0, $Exe.LastIndexOfAny([char[]]'\/')) }
+if ($PathFile) {
+    $pathFileFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PathFile)
+    $exeDir = $Exe.Substring(0, $Exe.LastIndexOfAny([char[]]'\/'))
+    [System.IO.File]::AppendAllText($pathFileFull, $exeDir + [Environment]::NewLine)
+}
+exit 0

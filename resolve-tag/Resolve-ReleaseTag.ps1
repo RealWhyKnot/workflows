@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [string] $Tag = '',
@@ -49,6 +50,10 @@ $out = [ordered]@{
 }
 
 if ($OutputPath) {
-    foreach ($k in $out.Keys) { Add-Content -LiteralPath $OutputPath -Value "$k=$($out[$k])" }
+    $outputFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+    foreach ($k in $out.Keys) {
+        [System.IO.File]::AppendAllText($outputFile, "$k=$($out[$k])" + [Environment]::NewLine)
+    }
 }
 foreach ($k in $out.Keys) { Write-Host "$k=$($out[$k])" }
+exit 0
