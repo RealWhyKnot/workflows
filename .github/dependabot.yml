@@ -11,3 +11,14 @@ updates:
     groups:
       actions:
         update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /lint/typescript/merge
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      lint-tools:
+        update-types: [minor, patch]
