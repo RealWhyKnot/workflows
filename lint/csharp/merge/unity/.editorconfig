@@ -102,6 +102,7 @@ dotnet_diagnostic.AsyncFixer01.severity = none
 dotnet_diagnostic.AsyncFixer03.severity = warning
 dotnet_diagnostic.VSTHRD002.severity = warning
 dotnet_diagnostic.VSTHRD100.severity = none
+dotnet_diagnostic.VSTHRD202.severity = none
 dotnet_diagnostic.MA0004.severity = none
 dotnet_diagnostic.MA0040.severity = warning
 dotnet_diagnostic.MA0048.severity = warning
