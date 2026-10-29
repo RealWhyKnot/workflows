@@ -104,7 +104,7 @@ function Add-VendoredEntry {
     $names = @(foreach ($item in $Entry) { if (-not $item.StartsWith('/')) { $item.TrimEnd('/') } })
     $paths = @(foreach ($item in $Entry) { if ($item.StartsWith('/')) { $item.Trim('/') } })
     switch -CaseSensitive ($Key) {
-        'vendored-paths.txt' {
+        '.github/lint/vendored-paths.txt' {
             return $Text.TrimEnd("`n") + "`n" + ($Entry -join "`n") + "`n"
         }
         'ruff.toml' {
@@ -416,14 +416,23 @@ foreach ($name in $extensions.Keys) {
     }
 }
 
-$vendoredList = Join-Path (Join-Path $PSScriptRoot 'common') 'vendored-paths.txt'
+$vendoredList = Join-Path $PSScriptRoot 'common/.github/lint/vendored-paths.txt'
 if (-not (Test-Path -LiteralPath $vendoredList -PathType Leaf)) {
     throw "No vendored-path list at $vendoredList"
 }
 $shared = @(Read-VendoredEntry -Path $vendoredList)
 
 $root = (Resolve-Path -LiteralPath $RepoRoot).Path
-$localList = Join-Path $root 'vendored-paths.local.txt'
+$localList = Join-Path $root '.github/lint/vendored-paths.local.txt'
+$oldList = Join-Path $root 'vendored-paths.local.txt'
+if (Test-Path -LiteralPath $oldList -PathType Leaf) {
+    if (Test-Path -LiteralPath $localList -PathType Leaf) {
+        throw 'There''s a vendored-paths.local.txt at the root and in .github/lint/. Merge them in .github/lint/.'
+    }
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $localList))
+    [IO.File]::Move($oldList, $localList)
+    Write-Host 'common: moved vendored-paths.local.txt into .github/lint/'
+}
 $local = @()
 if (Test-Path -LiteralPath $localList -PathType Leaf) {
     $local = @(Read-VendoredEntry -Path $localList | Where-Object { $_ -cnotin $shared } | Select-Object -Unique)
@@ -463,12 +472,16 @@ if ($Lang) {
     foreach ($name in @('common'; $available)) {
         $folder = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot $name)).Path
         foreach ($item in Get-ChildItem -LiteralPath $folder -File -Recurse -Force) {
-            $null = $shipped.Add(($item.FullName.Substring($folder.Length).TrimStart('\', '/') -replace '\\', '/'))
+            $key = $item.FullName.Substring($folder.Length).TrimStart('\', '/') -replace '\\', '/'
+            $null = $shipped.Add($key)
+            if ($key -match '^\.github/lint/[^/]+$') {
+                $null = $shipped.Add($item.Name)
+            }
         }
     }
     $present = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($file in $own) {
-        if ($shipped.Contains($file)) {
+        if ($shipped.Contains($file) -or $file.StartsWith('.lint/')) {
             continue
         }
         $language = Get-FileLanguage -Root $root -File $file -LanguageOf $languageOf
@@ -545,7 +558,7 @@ foreach ($name in @('common'; $selected)) {
                 $from = Join-Path $source $rule.Use
                 Write-Host "${name}: using $($rule.Use) for $key because $reason"
             } else {
-                $where = 'vendored paths go in vendored-paths.local.txt'
+                $where = 'vendored paths go in .github/lint/vendored-paths.local.txt'
                 Write-Host "${name}: $reason. Remove it: $key replaces it, and $where."
                 $pending = $true
             }
@@ -554,6 +567,21 @@ foreach ($name in @('common'; $selected)) {
             $plan[$key] = [System.Collections.Generic.List[object]]::new()
         }
         $plan[$key].Add(@{ Language = $name; Source = $from })
+    }
+}
+
+foreach ($key in $plan.Keys) {
+    if ($key -notmatch '^\.github/lint/(?<rest>.+)$') {
+        continue
+    }
+    $rest = $Matches['rest']
+    $old = @(".lint/$rest"; if (-not $rest.Contains('/')) { $rest })
+    foreach ($copy in $old) {
+        if (Test-Path -LiteralPath (Join-Path $root $copy) -PathType Leaf) {
+            $owner = $plan[$key][0].Language
+            Write-Host "${owner}: $copy moved to $key. Delete $copy and point hooks and CI at $key."
+            $pending = $true
+        }
     }
 }
 

@@ -88,5 +88,5 @@ jobs:
           $global:LASTEXITCODE = 0
           & ./lint/Install-Lint.ps1 -RepoRoot . -Lang powershell
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./Invoke-PSLint.ps1
+          & ./.github/lint/Invoke-PSLint.ps1
           exit $LASTEXITCODE

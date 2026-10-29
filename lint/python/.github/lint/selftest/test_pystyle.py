@@ -324,7 +324,7 @@ class LayoutTest(unittest.TestCase):
 
     def test_lint_excludes_match_the_vendored_list(self) -> None:
         entries = pystyle.vendored_entries()
-        here = Path(pystyle.__file__).resolve().parent
+        here = Path(pystyle.__file__).resolve().parents[2]
         ruff = (here / "ruff.toml").read_text(encoding="utf-8")
         block = re.search(r"extend-exclude = \[(.*?)\]", ruff, re.DOTALL)
         ruff_excludes = re.findall(r'"([^"]+)"', block.group(1) if block else "")

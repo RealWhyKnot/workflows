@@ -653,24 +653,27 @@ pwsh path/to/workflows/lint/Install-Lint.ps1 -RepoRoot .
 
 Without `-Lang` it picks languages from your repo's tracked files, skipping vendored code. HTML
 files count as CSS, and Svelte, Vue and Astro files count as both TypeScript and CSS. Pass
-`-Lang rust,csharp` to pick them yourself. Each file goes to the same relative path in your repo. If
-a file is already there and differs, it's left alone unless you pass `-Force`.
+`-Lang rust,csharp` to pick them yourself. Each file goes to the same relative path in your repo:
+tool configs at the root, and the checker scripts and vendored-path lists in `.github/lint/`. If a
+file is already there and differs, it's left alone unless you pass `-Force`.
 
 `lint/common/` is installed in all repos. `vendored-paths.txt` lists folders that keep their
 upstream style, and the shared copy only has generic names like `vendor/`. `name/` matches a folder
 with that name at any depth and `/path/` matches from the repo root. You list your repo's own
-upstream folders in a `vendored-paths.local.txt` at its root, same format. Install-Lint adds those
+upstream folders in `.github/lint/vendored-paths.local.txt`, same format. Install-Lint adds those
 to the excludes in the ruff, pyright, ESLint, Stylelint, Prettier and `.editorconfig` configs it
 installs and in its copy of `vendored-paths.txt`, and treats the result as current on the next run.
+Older installs kept these files at the repo root. Install-Lint moves a root
+`vendored-paths.local.txt` into `.github/lint/` and lists the other old copies for you to delete.
 
 `style_check.py` and the `style_*.py` modules beside it check things the linters can't: comments and
 inline suppressions in Rust, C# and Python; source files over 600 lines; Sass, Less and Stylus
 files; committed generated C#; crates that don't inherit `[workspace.lints]`; lint or format configs
-below the repo root or inside project files. Run it from the repo root with Python 3.11+. `-B`
-keeps `__pycache__` out of the repo.
+below the repo root or inside project files, and checker files outside `.github/lint/`. Run it from
+the repo root with Python 3.11+. `-B` keeps `__pycache__` out of the repo.
 
 ```
-python -B style_check.py
+python -B .github/lint/style_check.py
 ```
 
 It also fails if `vendored-paths.local.txt` has an entry the installed `vendored-paths.txt` lacks,

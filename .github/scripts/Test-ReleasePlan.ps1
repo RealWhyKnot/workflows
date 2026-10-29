@@ -87,17 +87,18 @@ $converted = ConvertTo-PinnedReference -Content $workflow -Tag 'v2026.10.28.0'
 Assert-Equal -Name 'only shared references move to the release tag' -Actual $converted -Expected $pinned
 
 $paths = [ordered]@{
-    'README.md'                             = $false
-    'beta-gate/Test-GetBetaGate.ps1'        = $false
-    '.github/workflows/ci.yml'              = $false
-    '.github/workflows/release.yml'         = $false
-    '.github/scripts/ReleasePlan.psm1'      = $false
-    '.github/dependabot.yml'                = $false
-    'lint/common/tests/test_style_check.py' = $false
-    '.github/workflows/nightly-beta.yml'    = $true
-    'beta-gate/Get-BetaGate.ps1'            = $true
-    'beta-gate/action.yml'                  = $true
-    'lint/powershell/PSStyleRules.psm1'     = $true
+    'README.md'                                         = $false
+    'beta-gate/Test-GetBetaGate.ps1'                    = $false
+    '.github/workflows/ci.yml'                          = $false
+    '.github/workflows/release.yml'                     = $false
+    '.github/scripts/ReleasePlan.psm1'                  = $false
+    '.github/dependabot.yml'                            = $false
+    'lint/common/tests/test_style_check.py'             = $false
+    'lint/python/.github/lint/selftest/test_pystyle.py' = $false
+    '.github/workflows/nightly-beta.yml'                = $true
+    'beta-gate/Get-BetaGate.ps1'                        = $true
+    'beta-gate/action.yml'                              = $true
+    'lint/powershell/.github/lint/PSStyleRules.psm1'    = $true
 }
 foreach ($path in $paths.Keys) {
     $shipped = Test-ShippedPath -Path $path

@@ -1,5 +1,5 @@
 BEGIN {
-  while ((status = (getline entry < "vendored-paths.txt")) > 0) {
+  while ((status = (getline entry < ".github/lint/vendored-paths.txt")) > 0) {
     sub(/\r$/, "", entry)
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", entry)
     if (entry == "") {
@@ -13,7 +13,7 @@ BEGIN {
     }
   }
   if (status < 0) {
-    print "vendored-paths.txt is missing from the repo root. Run Install-Lint again." > "/dev/stderr"
+    print ".github/lint/vendored-paths.txt is missing. Run Install-Lint again." > "/dev/stderr"
     broken = 1
     exit
   }

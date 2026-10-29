@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 VENDORED_FILE = "vendored-paths.txt"
-VENDORED_PLACES = (".", "../common")
+VENDORED_PLACES = (".", "../../../common/.github/lint")
 MODULE_NAME = re.compile(r"[a-z_][a-z0-9_]*")
 BUILD_SYSTEM = re.compile(r"^\[build-system\]", re.MULTILINE)
 BROAD_EXCEPTIONS = frozenset({"Exception", "BaseException", "builtins.Exception", "builtins.BaseException"})

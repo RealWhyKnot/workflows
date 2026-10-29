@@ -127,9 +127,10 @@ function Invoke-Analyzer {
 }
 
 $folder = (Resolve-Path -LiteralPath $Root).Path
-$vendoredList = Join-Path $folder 'vendored-paths.txt'
+$lint = Join-Path $folder '.github/lint'
+$vendoredList = Join-Path $lint 'vendored-paths.txt'
 if (-not (Test-Path -LiteralPath $vendoredList -PathType Leaf)) {
-    [Console]::Error.WriteLine("vendored-paths.txt is missing in $folder. Run Install-Lint again.")
+    [Console]::Error.WriteLine("vendored-paths.txt is missing in $lint. Run Install-Lint again.")
     exit 2
 }
 $vendored = Get-VendoredPattern -Path $vendoredList
@@ -142,8 +143,8 @@ if (-not $SevenProfile -or -not (Test-Path -LiteralPath $SevenProfile -PathType 
     exit 2
 }
 $windows = 'win-8_x64_10.0.17763.0_5.1.17763.316_x64_4.0.30319.42000_framework'
-$both = New-LintSetting -Folder $folder -Profiles $windows, $SevenProfile -Versions '5.1', '7.4'
-$seven = New-LintSetting -Folder $folder -Profiles $SevenProfile -Versions '7.4'
+$both = New-LintSetting -Folder $lint -Profiles $windows, $SevenProfile -Versions '5.1', '7.4'
+$seven = New-LintSetting -Folder $lint -Profiles $SevenProfile -Versions '7.4'
 
 $listed = @(& { $ErrorActionPreference = 'Continue'; git -c core.quotepath=off -C $folder ls-files 2>$null })
 if ($LASTEXITCODE -ne 0) {

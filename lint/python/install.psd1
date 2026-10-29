@@ -14,13 +14,13 @@
             Reason  = 'pyproject.toml has [tool.pyright]'
         }
         @{
-            File    = 'selftest/__init__.py'
+            File    = '.github/lint/selftest/__init__.py'
             Tracked = '.'
             Skip    = $true
             Reason  = 'selftest only tests pystyle.py in the workflows repo'
         }
         @{
-            File    = 'selftest/test_pystyle.py'
+            File    = '.github/lint/selftest/test_pystyle.py'
             Tracked = '.'
             Skip    = $true
             Reason  = 'selftest only tests pystyle.py in the workflows repo'

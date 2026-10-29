@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
-SCRIPT = Path(__file__).resolve().parent.parent / "style_check.py"
+BASELINE = Path(__file__).resolve().parents[2]
+SCRIPT = BASELINE / "common" / ".github" / "lint" / "style_check.py"
 MODULES = ("style_check.py", "style_configs.py", "style_scan.py", "style_sources.py")
 VENDORED = SCRIPT.with_name("vendored-paths.txt")
-LOCAL = "vendored-paths.local.txt"
+LOCAL = ".github/lint/vendored-paths.local.txt"
 GIT = shutil.which("git") or "git"
 
 
@@ -193,9 +194,33 @@ class SourceTests(RepoCase):
 
     def test_installed_modules_pass_their_own_check(self) -> None:
         for name in MODULES:
-            self.write(name, SCRIPT.with_name(name).read_text(encoding="utf-8"))
-        self.write(VENDORED.name, VENDORED.read_text(encoding="utf-8"))
+            self.write(f".github/lint/{name}", SCRIPT.with_name(name).read_text(encoding="utf-8"))
+        self.write(f".github/lint/{VENDORED.name}", VENDORED.read_text(encoding="utf-8"))
         self.assert_clean()
+
+    def test_lint_files_at_the_root_belong_in_lint(self) -> None:
+        self.write("style_check.py", SCRIPT.read_text(encoding="utf-8"))
+        self.write("vendored-paths.txt", VENDORED.read_text(encoding="utf-8"))
+        self.write("vendored-paths.local.txt", lines("upstream-lib/"))
+        self.write("PSScriptAnalyzerSettings.psd1", lines("@{}"))
+        self.write("tsconfig.base.json", lines("{}"))
+        self.write("scripts/PSScriptAnalyzerSettings.psd1", lines("@{}"))
+        self.write(".github/lint/PSScriptAnalyzerSettings.psd1", lines("@{}"))
+        self.write(".github/lint/tsconfig.base.json", lines("{}"))
+        self.write(".lint/style_scan.py", SCRIPT.with_name("style_scan.py").read_text(encoding="utf-8"))
+        self.write(".lint/CSharpStyle/Program.cs", lines("return 0;"))
+        self.assert_findings(
+            [
+                ".lint/CSharpStyle/Program.cs: belongs in .github/lint/ (GEN-5)",
+                ".lint/style_scan.py: belongs in .github/lint/ (GEN-5)",
+                "PSScriptAnalyzerSettings.psd1: belongs in .github/lint/ (GEN-5)",
+                "scripts/PSScriptAnalyzerSettings.psd1: nested lint or format config overrides the baseline (GEN-5)",
+                "style_check.py: belongs in .github/lint/ (GEN-5)",
+                "tsconfig.base.json: belongs in .github/lint/ (GEN-5)",
+                "vendored-paths.local.txt: belongs in .github/lint/ (GEN-5)",
+                "vendored-paths.txt: belongs in .github/lint/ (GEN-5)",
+            ]
+        )
 
     def test_python_comments_docstrings_and_noqa(self) -> None:
         self.write(
@@ -281,18 +306,20 @@ class SourceTests(RepoCase):
                 self.assertEqual(result.code, 2)
 
     def test_installed_list_must_hold_every_local_entry(self) -> None:
+        lint = self.root / ".github" / "lint"
+        lint.mkdir(parents=True)
         for name in (*MODULES, VENDORED.name):
-            shutil.copy(SCRIPT.with_name(name), self.root / name)
+            shutil.copy(SCRIPT.with_name(name), lint / name)
         self.write(LOCAL, lines("upstream-lib/", "vendor/"))
         self.write("upstream-lib/a.py", lines("# upstream"))
-        installed = [sys.executable, "-B", str(self.root / SCRIPT.name), str(self.root)]
+        installed = [sys.executable, "-B", str(lint / SCRIPT.name), str(self.root)]
         result = subprocess.run(installed, capture_output=True, text=True, encoding="utf-8", check=False, timeout=120)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(
             result.stdout.splitlines()[0],
             f"{LOCAL}: upstream-lib/ isn't in {VENDORED.name} yet. Run Install-Lint again (GEN-1)",
         )
-        folded = self.root / VENDORED.name
+        folded = lint / VENDORED.name
         folded.write_text(folded.read_text(encoding="utf-8") + "upstream-lib/\n", encoding="utf-8")
         result = subprocess.run(installed, capture_output=True, text=True, encoding="utf-8", check=False, timeout=120)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
@@ -369,7 +396,7 @@ class CSharpTests(RepoCase):
         )
 
     def test_baseline_props_pass_and_lower_analysis_fails(self) -> None:
-        baseline = SCRIPT.parent.parent / "csharp" / "Directory.Build.props"
+        baseline = BASELINE / "csharp" / "Directory.Build.props"
         self.write("Directory.Build.props", baseline.read_text(encoding="utf-8"))
         self.write(
             "App/App.csproj",
@@ -443,32 +470,46 @@ class ConfigTests(RepoCase):
         )
 
     def test_unity_props_pass_beside_headless_and_lint_projects(self) -> None:
-        merge = SCRIPT.parent.parent / "csharp" / "merge" / "unity"
+        merge = BASELINE / "csharp" / "merge" / "unity"
         props = (merge / "Directory.Build.props").read_text(encoding="utf-8")
         targets = (merge / "Directory.Build.targets").read_text(encoding="utf-8")
         self.write("ProjectSettings/ProjectVersion.txt", lines("m_EditorVersion: 6000.7.0b7"))
         self.write("headless/Directory.Build.props", props)
         self.write("headless/Directory.Build.targets", targets)
-        self.write("lint/Directory.Build.props", props)
+        self.write(".github/lint/unity/Directory.Build.props", props)
         self.assert_clean()
 
     def test_unity_props_fail_deeper_or_under_a_root_baseline(self) -> None:
-        merge = SCRIPT.parent.parent / "csharp" / "merge" / "unity"
+        merge = BASELINE / "csharp" / "merge" / "unity"
         props = (merge / "Directory.Build.props").read_text(encoding="utf-8")
         self.write("Directory.Build.props", props)
         self.write("headless/Directory.Build.props", props)
-        self.write("lint/App/Directory.Build.props", props)
+        self.write(".github/lint/unity/App/Directory.Build.props", props)
+        self.write(".github/lint/Directory.Build.props", props)
         self.write("tools/Directory.Build.props", props)
         self.write(
-            "lint/Directory.Build.targets",
+            ".github/lint/unity/Directory.Build.targets",
             lines("<Project>", "  <PropertyGroup>", "    <NoWarn>CA1000</NoWarn>", "  </PropertyGroup>", "</Project>"),
         )
         self.assert_findings(
             [
+                ".github/lint/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+                ".github/lint/unity/App/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+                ".github/lint/unity/Directory.Build.targets:3: project setting loosens the baseline (GEN-4)",
                 "headless/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
-                "lint/App/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
-                "lint/Directory.Build.targets:3: project setting loosens the baseline (GEN-4)",
                 "tools/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+            ]
+        )
+
+    def test_old_unity_lint_folder_belongs_in_lint(self) -> None:
+        props = (BASELINE / "csharp" / "merge" / "unity" / "Directory.Build.props").read_text(encoding="utf-8")
+        self.write("ProjectSettings/ProjectVersion.txt", lines("m_EditorVersion: 6000.7.0b7"))
+        self.write("lint/Directory.Build.props", props)
+        self.write("lint/App.Editor.csproj", lines("<Project />"))
+        self.assert_findings(
+            [
+                "lint/App.Editor.csproj: Unity lint projects belong in .github/lint/unity/ (GEN-5)",
+                "lint/Directory.Build.props: Unity lint projects belong in .github/lint/unity/ (GEN-5)",
             ]
         )
 
