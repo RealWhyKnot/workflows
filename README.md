@@ -651,7 +651,8 @@ copies them into a repo.
 pwsh path/to/workflows/lint/Install-Lint.ps1 -RepoRoot .
 ```
 
-Without `-Lang` it picks languages from your repo's tracked files, skipping vendored code. Pass
+Without `-Lang` it picks languages from your repo's tracked files, skipping vendored code. HTML
+files count as CSS, and Svelte, Vue and Astro files count as both TypeScript and CSS. Pass
 `-Lang rust,csharp` to pick them yourself. Each file goes to the same relative path in your repo. If
 a file is already there and differs, it's left alone unless you pass `-Force`.
 
@@ -659,14 +660,14 @@ a file is already there and differs, it's left alone unless you pass `-Force`.
 upstream style, and the shared copy only has generic names like `vendor/`. `name/` matches a folder
 with that name at any depth and `/path/` matches from the repo root. You list your repo's own
 upstream folders in a `vendored-paths.local.txt` at its root, same format. Install-Lint adds those
-to the excludes in the ruff, pyright, ESLint, Prettier and `.editorconfig` configs it installs and
-in its copy of `vendored-paths.txt`, and treats the result as current on the next run.
+to the excludes in the ruff, pyright, ESLint, Stylelint, Prettier and `.editorconfig` configs it
+installs and in its copy of `vendored-paths.txt`, and treats the result as current on the next run.
 
 `style_check.py` and the `style_*.py` modules beside it check things the linters can't: comments and
-inline suppressions in Rust, C# and Python; source files over 600 lines; committed generated C#;
-crates that don't inherit `[workspace.lints]`; lint or format configs below the repo root or inside
-project files. Run it from the repo root with Python 3.11+, with `-B` so it doesn't leave a
-`__pycache__` behind.
+inline suppressions in Rust, C# and Python; source files over 600 lines; Sass, Less and Stylus
+files; committed generated C#; crates that don't inherit `[workspace.lints]`; lint or format configs
+below the repo root or inside project files. Run it from the repo root with Python 3.11+. `-B`
+keeps `__pycache__` out of the repo.
 
 ```
 python -B style_check.py
@@ -681,9 +682,10 @@ Files directly under `lint/<lang>/merge/` go inside a file your repo already has
 missing. If the file is missing it's only a note, unless the language's `install.psd1` names it in a
 `Merge` entry.
 
-The TypeScript tools are pinned to exact versions in `lint/typescript/merge/package.json`, and
-Dependabot checks those pins weekly. Install-Lint lists the pins where your `package.json` differs.
-After a bump, run it again in each repo to see what's left to update there.
+The TypeScript and CSS tools are pinned to exact versions in `lint/typescript/merge/package.json`
+and `lint/css/merge/package.json`, and Dependabot checks those pins weekly. Install-Lint lists the
+pins where your `package.json` differs. After a bump, run it again in each repo to see what's left to
+update there.
 
 An `install.psd1` in a language folder adjusts what a given repo gets. A rule can swap in one of the
 variants kept in folders under `merge/`, the way Unity repos get `merge/unity/.editorconfig`. It can
@@ -691,9 +693,10 @@ also skip a file if it gives a reason, which is how Unity repos go without the r
 `Directory.Build.props`. A rule that does neither is a leftover per-repo tweak, and the script tells
 you to remove it.
 
-When two languages both have `.editorconfig`, their sections are merged into one file. If they set a
-key differently, or both have some other file, you sort that out by hand. The script lists anything
-like that and exits 1, and otherwise exits 0.
+When two languages both have `.editorconfig`, their sections are merged into one file. Any other
+file two languages both have is copied once if the copies match, like the Prettier config in
+TypeScript and CSS. If they set a key differently, or their copies of a file differ, you sort that
+out by hand. The script lists anything like that and exits 1, and otherwise exits 0.
 
 ### Dependabot
 

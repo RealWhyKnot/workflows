@@ -25,11 +25,13 @@ ROOT_ONLY = frozenset(
         "rustfmt.toml",
     }
 )
-ROOT_ONLY_PATTERN = re.compile(r"^(?:eslint|prettier)\.config\.[cm]?[jt]s$")
+ROOT_ONLY_PATTERN = re.compile(r"^(?:eslint|prettier|stylelint)\.config\.[cm]?[jt]s$")
 NEVER_NAMES = (
     r"\.eslintrc.*",
     r"\.eslintignore",
     r"\.prettierrc.*",
+    r"\.stylelintrc.*",
+    r"\.stylelintignore",
     r"\.ruff\.toml",
     r"\.rustfmt\.toml",
     r"\.clippy\.toml",
@@ -78,8 +80,8 @@ def pyproject_problem(path: Path, _root: Path) -> str | None:
 
 
 def package_problem(path: Path, _root: Path) -> str | None:
-    if has_key(read_json(path), "eslintConfig", "prettier"):
-        return "eslintConfig or prettier key overrides the baseline (GEN-5)"
+    if has_key(read_json(path), "eslintConfig", "prettier", "stylelint"):
+        return "eslintConfig, prettier or stylelint key overrides the baseline (GEN-5)"
     return None
 
 

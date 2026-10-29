@@ -123,6 +123,10 @@ function Add-VendoredEntry {
             $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "$path/" })
             return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Quote '"' -Item $item
         }
+        'stylelint.config.mjs' {
+            $item = @(foreach ($name in $names) { "**/$name/**" }; foreach ($path in $paths) { "$path/**" })
+            return Add-ListItem -Text $Text -Anchor '**/.yarn/**' -Quote '"' -Item $item
+        }
         '.editorconfig' {
             $Text = Add-SectionItem -Text $Text -Prefix '' -Item @($names; $paths)
             if ($names.Count -gt 0) {
@@ -402,7 +406,9 @@ $extensions = @{
     python     = @('.py')
     powershell = @('.ps1', '.psm1', '.psd1')
     shell      = @('.sh', '.bash')
+    css        = @('.css', '.html')
 }
+$styled = @('.svelte', '.vue', '.astro')
 $languageOf = @{}
 foreach ($name in $extensions.Keys) {
     foreach ($extension in $extensions[$name]) {
@@ -468,6 +474,9 @@ if ($Lang) {
         $language = Get-FileLanguage -Root $root -File $file -LanguageOf $languageOf
         if ($language) {
             $null = $present.Add($language)
+        }
+        if ([IO.Path]::GetExtension($file) -in $styled) {
+            $null = $present.Add('css')
         }
     }
     $selected = @($available | Where-Object { $present.Contains($_) })
@@ -553,7 +562,7 @@ foreach ($key in $plan.Keys) {
     $items = $plan[$key]
     $names = @(foreach ($item in $items) { $item.Language }) -join ' and '
     $texts = @(foreach ($item in $items) { [IO.File]::ReadAllText($item.Source) -replace "`r`n", "`n" })
-    if ($texts.Count -eq 1) {
+    if (@($texts | Where-Object { $_ -cne $texts[0] }).Count -eq 0) {
         $text = $texts[0]
     } elseif ((Split-Path -Leaf $key) -eq '.editorconfig') {
         $joined = Join-Section -Text $texts

@@ -105,6 +105,18 @@ const testChecks = [
   },
 ];
 const svelteLegacy = [{ selector: "SvelteReactiveStatement", message: "Svelte 5 runes only: $derived or $effect, not $: (TS-5)." }];
+const styleBinding = "A style binding may only set custom properties; put the rest in a class (CSS-5).";
+const svelteStyle = [{ selector: "SvelteStyleDirective[key.name.name!=/^--/]", message: styleBinding }];
+const vueStyle = [
+  {
+    selector: "VAttribute[directive=true][key.name.name='bind'][key.argument.name='style'] ObjectExpression > Property:not([key.value=/^--/])",
+    message: styleBinding,
+  },
+];
+const astroStyle = [
+  { selector: "JSXAttribute[name.name='style'] ObjectExpression > Property:not([key.value=/^--/])", message: styleBinding },
+  { selector: "JSXAttribute[name.namespace.name='is'][name.name.name='global']", message: "No is:global; nest :global() inside a scoped selector (CSS-9)." },
+];
 
 const yesNo = ["is", "has", "can", "should", "will", "was", "did", "needs", "wants"];
 const yesNoUpper = [...yesNo, ...yesNo.map((word) => `${word.toUpperCase()}_`)];
@@ -283,6 +295,8 @@ export default defineConfig(
             "vue/component-api-style": ["error", ["script-setup"]],
             "vue/define-emits-declaration": ["error", "type-based"],
             "vue/define-props-declaration": ["error", "type-based"],
+            "vue/no-restricted-syntax": ["error", ...vueStyle],
+            "vue/enforce-style-attribute": "error",
           },
         },
       ]
@@ -294,10 +308,11 @@ export default defineConfig(
           files: ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
           languageOptions: { parserOptions: { parser: tseslint.parser } },
           rules: {
-            "no-restricted-syntax": ["error", ...syntax, ...defaultExports, ...svelteLegacy],
+            "no-restricted-syntax": ["error", ...syntax, ...defaultExports, ...svelteLegacy, ...svelteStyle],
             "prefer-const": "off",
             "svelte/prefer-const": "error",
             "svelte/prefer-writable-derived": "error",
+            "svelte/valid-compile": "error",
           },
         },
         svelte.configs.prettier,
@@ -309,7 +324,11 @@ export default defineConfig(
         {
           files: ["**/*.astro"],
           languageOptions: { parserOptions: { parser: tseslint.parser, projectService: false, project: true } },
-          rules: { "max-lines": ["error", { max: 600 }], "no-restricted-syntax": ["error", ...syntax] },
+          rules: {
+            "max-lines": ["error", { max: 600 }],
+            "no-restricted-syntax": ["error", ...syntax, ...astroStyle],
+            "astro/no-unused-css-selector": "error",
+          },
         },
       ]
     : [],

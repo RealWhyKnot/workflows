@@ -237,11 +237,24 @@ class SourceTests(RepoCase):
         self.write("web/app.ts", "export {};\n" * 601)
         self.write("tools/Run.ps1", "$x = 1\n" * 601)
         self.write("web/page.astro", "---\n" * 601)
+        self.write("web/theme.css", "a {}\n" * 601)
         self.assert_findings(
             [
                 "tools/Run.ps1: 601 lines, over 600 (GEN-15)",
                 "web/app.ts: 601 lines, over 600 (GEN-15)",
                 "web/page.astro: 601 lines, over 600 (GEN-15)",
+                "web/theme.css: 601 lines, over 600 (GEN-15)",
+            ]
+        )
+
+    def test_preprocessor_files_fail(self) -> None:
+        self.write("web/theme.scss", lines("a { b: c; }"))
+        self.write("web/old.less", lines("a { b: c; }"))
+        self.write("web/plain.css", lines("a { b: c; }"))
+        self.assert_findings(
+            [
+                "web/old.less: Sass, Less or Stylus file; write plain CSS (CSS-10)",
+                "web/theme.scss: Sass, Less or Stylus file; write plain CSS (CSS-10)",
             ]
         )
 
@@ -411,15 +424,21 @@ class ConfigTests(RepoCase):
         self.write("svc/pyproject.toml", lines("[project]", 'name = "svc"', "[tool.ruff]", "line-length = 200"))
         self.write("web/package.json", lines('{"name": "web", "eslintConfig": {}}'))
         self.write("site/package.json", lines('{"name": "site", "prettier": {}}'))
+        self.write("styles/package.json", lines('{"name": "styles", "stylelint": {}}'))
+        self.write("site/stylelint.config.mjs", lines("export default {};"))
+        self.write("site/.stylelintrc.json", lines("{}"))
         self.assert_findings(
             [
                 "api/.eslintrc.json: lint or format config the baseline doesn't use (GEN-5)",
                 "crate/clippy.toml: nested lint or format config overrides the baseline (GEN-5)",
                 "crate/rustfmt.toml: nested lint or format config overrides the baseline (GEN-5)",
                 "edge/eslint.config.mjs: nested lint or format config overrides the baseline (GEN-5)",
-                "site/package.json: eslintConfig or prettier key overrides the baseline (GEN-5)",
+                "site/.stylelintrc.json: lint or format config the baseline doesn't use (GEN-5)",
+                "site/package.json: eslintConfig, prettier or stylelint key overrides the baseline (GEN-5)",
+                "site/stylelint.config.mjs: nested lint or format config overrides the baseline (GEN-5)",
+                "styles/package.json: eslintConfig, prettier or stylelint key overrides the baseline (GEN-5)",
                 "svc/pyproject.toml: [tool.ruff] or [tool.pyright] overrides the baseline (GEN-5)",
-                "web/package.json: eslintConfig or prettier key overrides the baseline (GEN-5)",
+                "web/package.json: eslintConfig, prettier or stylelint key overrides the baseline (GEN-5)",
             ]
         )
 
