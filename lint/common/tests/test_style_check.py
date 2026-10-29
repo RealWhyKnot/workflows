@@ -442,6 +442,36 @@ class ConfigTests(RepoCase):
             ]
         )
 
+    def test_unity_props_pass_beside_headless_and_lint_projects(self) -> None:
+        merge = SCRIPT.parent.parent / "csharp" / "merge" / "unity"
+        props = (merge / "Directory.Build.props").read_text(encoding="utf-8")
+        targets = (merge / "Directory.Build.targets").read_text(encoding="utf-8")
+        self.write("ProjectSettings/ProjectVersion.txt", lines("m_EditorVersion: 6000.7.0b7"))
+        self.write("headless/Directory.Build.props", props)
+        self.write("headless/Directory.Build.targets", targets)
+        self.write("lint/Directory.Build.props", props)
+        self.assert_clean()
+
+    def test_unity_props_fail_deeper_or_under_a_root_baseline(self) -> None:
+        merge = SCRIPT.parent.parent / "csharp" / "merge" / "unity"
+        props = (merge / "Directory.Build.props").read_text(encoding="utf-8")
+        self.write("Directory.Build.props", props)
+        self.write("headless/Directory.Build.props", props)
+        self.write("lint/App/Directory.Build.props", props)
+        self.write("tools/Directory.Build.props", props)
+        self.write(
+            "lint/Directory.Build.targets",
+            lines("<Project>", "  <PropertyGroup>", "    <NoWarn>CA1000</NoWarn>", "  </PropertyGroup>", "</Project>"),
+        )
+        self.assert_findings(
+            [
+                "headless/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+                "lint/App/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+                "lint/Directory.Build.targets:3: project setting loosens the baseline (GEN-4)",
+                "tools/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
+            ]
+        )
+
     def test_cargo_and_csproj_overrides(self) -> None:
         self.write("Cargo.toml", lines("[workspace]", "members = []", "[workspace.lints.clippy]", "all = 'deny'"))
         self.write("good/Cargo.toml", lines("[package]", "name = 'good'", "[lints]", "workspace = true"))

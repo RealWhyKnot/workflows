@@ -26,6 +26,8 @@ ROOT_ONLY = frozenset(
     }
 )
 ROOT_ONLY_PATTERN = re.compile(r"^(?:eslint|prettier|stylelint)\.config\.[cm]?[jt]s$")
+UNITY_PROJECT_DIRS = frozenset({"headless", "lint"})
+UNITY_BUILD_FILES = frozenset({"Directory.Build.props", "Directory.Build.targets"})
 NEVER_NAMES = (
     r"\.eslintrc.*",
     r"\.eslintignore",
@@ -122,12 +124,17 @@ def check_project(path: str, root: Path) -> list[Finding]:
     ]
 
 
+def beside_unity_projects(path: str, root: Path) -> bool:
+    folder, _, name = path.partition("/")
+    return folder in UNITY_PROJECT_DIRS and name in UNITY_BUILD_FILES and not (root / name).exists()
+
+
 def check_config(path: str, root: Path) -> list[Finding]:
     name = path.rsplit("/", 1)[-1]
     nested = "/" in path
     if NEVER.match(name):
         return [Finding(path, 0, "lint or format config the baseline doesn't use (GEN-5)")]
-    if nested and (name in ROOT_ONLY or ROOT_ONLY_PATTERN.match(name)):
+    if nested and (name in ROOT_ONLY or ROOT_ONLY_PATTERN.match(name)) and not beside_unity_projects(path, root):
         return [Finding(path, 0, "nested lint or format config overrides the baseline (GEN-5)")]
     if PROJECT_FILE.search(name):
         return check_project(path, root)
