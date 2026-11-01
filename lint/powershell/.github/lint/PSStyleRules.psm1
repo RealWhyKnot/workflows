@@ -206,7 +206,13 @@ function Get-FileRecord {
     }
     $param = $Root.ParamBlock
     $binding = $param -and @($param.Attributes | Where-Object { $_.TypeName.Name -eq 'CmdletBinding' }).Count -gt 0
-    $header = $lines[0].TrimEnd("`r") -eq '#!/usr/bin/env pwsh' -and $binding -and $Statements.Count -ge 2 -and
+    $splat = {
+        param([Ast] $Node)
+        $Node -is [VariableExpressionAst] -and $Node.Splatted -and $Node.VariablePath.UserPath -eq 'args'
+    }
+    $launcher = -not $param -and $null -ne $Root.Find($splat, $false)
+    $header = $lines[0].TrimEnd("`r") -eq '#!/usr/bin/env pwsh' -and ($binding -or $launcher) -and
+    $Statements.Count -ge 2 -and
     $Statements[0].Extent.Text -eq $script:HeaderLines[0] -and $Statements[1].Extent.Text -eq $script:HeaderLines[1]
     if (-not $header) {
         New-StyleRecord -Rule 'StyleScriptHeader' -Extent (Get-LineExtent -File $File -Lines $lines -Number 1)
