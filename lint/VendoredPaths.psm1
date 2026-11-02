@@ -30,7 +30,7 @@ function Get-VendoredPattern {
     )
     $parts = @(foreach ($item in $Entry) {
             $name = [regex]::Escape($item.Trim('/'))
-            if ($Entry.StartsWith('/')) {
+            if ($item.StartsWith('/')) {
                 "^$name/"
             } else {
                 "(^|/)$name/"

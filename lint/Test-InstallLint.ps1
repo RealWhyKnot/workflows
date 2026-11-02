@@ -22,6 +22,15 @@ function Invoke-Install {
     [pscustomobject]@{ Code = $LASTEXITCODE; Text = $output -join "`n" }
 }
 
+Import-Module (Join-Path $PSScriptRoot 'VendoredPaths.psm1') -Force
+$mixedPattern = Get-VendoredPattern -Entry @('vendor/', '/rooted/')
+Assert-Check -Name 'unrooted entries in a mixed list match nested vendor paths' -Condition (
+    'a/b/vendor/x' -match $mixedPattern)
+Assert-Check -Name 'rooted entries in a mixed list match root paths' -Condition (
+    'rooted/x' -match $mixedPattern)
+Assert-Check -Name 'rooted entries in a mixed list reject nested paths' -Condition (
+    'a/rooted/x' -notmatch $mixedPattern)
+
 $sandbox = Join-Path ([IO.Path]::GetTempPath()) ('lint-install-' + [guid]::NewGuid().ToString('N'))
 $null = [IO.Directory]::CreateDirectory($sandbox)
 try {
