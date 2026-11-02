@@ -8,23 +8,23 @@ inputs:
   contents:
     description: Directory whose files are listed after each archive row, for a manifest that covers what is inside.
     required: false
-    default: ''
+    default: ""
   manifest-suffix:
     description: Suffix for the manifest written beside each archive.
     required: false
-    default: '.integrity.tsv'
+    default: ".integrity.tsv"
   manifest:
     description: Set false to build only the table.
     required: false
-    default: 'true'
+    default: "true"
   units:
     description: MiB (1048576 bytes) or MB (1000000).
     required: false
-    default: 'MiB'
+    default: "MiB"
   table-file:
     description: Optional path to write the markdown table to.
     required: false
-    default: ''
+    default: ""
 
 outputs:
   sha256:

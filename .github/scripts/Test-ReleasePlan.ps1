@@ -101,8 +101,8 @@ $paths = [ordered]@{
     'lint/powershell/.github/lint/PSStyleRules.psm1'    = $true
 }
 foreach ($path in $paths.Keys) {
-    $shipped = Test-ShippedPath -Path $path
-    Assert-Equal -Name "$path ships: $($paths[$path])" -Actual $shipped -Expected $paths[$path]
+    $isShipped = Test-ShippedPath -Path $path
+    Assert-Equal -Name "$path ships: $($paths[$path])" -Actual $isShipped -Expected $paths[$path]
 }
 
 try {
@@ -114,13 +114,13 @@ try {
     $null = Invoke-SandboxGit -Arguments @('config', 'core.hooksPath', '.no-hooks')
 
     $null = New-SandboxCommit -Subject 'feat: seed' -Path 'beta-gate/action.yml'
-    $threw = $false
+    $hasThrown = $false
     try {
         $null = Get-NextRelease -Root $sandbox -Day '2026.10.28'
     } catch [System.Management.Automation.RuntimeException] {
-        $threw = $true
+        $hasThrown = $true
     }
-    Assert-Equal -Name 'a repo with no release tag refuses to guess' -Actual $threw -Expected $true
+    Assert-Equal -Name 'a repo with no release tag refuses to guess' -Actual $hasThrown -Expected $true
 
     $null = Invoke-SandboxGit -Arguments @('tag', 'v1.6.2')
     Assert-Equal -Name 'nothing since the last release means no release' -Actual (Get-NextTag) -Expected ''
@@ -164,13 +164,13 @@ try {
     Assert-Equal -Name 'the first release has no previous one' -Actual $previous -Expected ''
 
     $null = New-SandboxCommit -Subject 'feat!: drop the old input' -Path 'beta-gate/action.yml'
-    $threw = $false
+    $hasThrown = $false
     try {
         $null = Get-NextRelease -Root $sandbox -Day '2026.10.28'
     } catch [System.Management.Automation.RuntimeException] {
-        $threw = $_.Exception.Message -like '*breaking change*'
+        $hasThrown = $_.Exception.Message -like '*breaking change*'
     }
-    Assert-Equal -Name 'a breaking change stops the release' -Actual $threw -Expected $true
+    Assert-Equal -Name 'a breaking change stops the release' -Actual $hasThrown -Expected $true
 } finally {
     if (Test-Path -LiteralPath $sandbox) {
         Remove-Item -LiteralPath $sandbox -Recurse -Force

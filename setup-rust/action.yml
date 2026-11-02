@@ -5,23 +5,23 @@ inputs:
   toolchain:
     description: Toolchain to install. Empty reads rust-toolchain.toml from working-directory or a folder above it, then falls back to stable.
     required: false
-    default: ''
+    default: ""
   components:
     description: Extra components, comma or newline separated, for example rustfmt, clippy.
     required: false
-    default: ''
+    default: ""
   targets:
     description: Extra targets, comma or newline separated.
     required: false
-    default: ''
+    default: ""
   working-directory:
     description: Directory holding Cargo.lock and target.
     required: false
-    default: '.'
+    default: "."
   cache:
     description: Cache the cargo registry, git checkouts and target directory.
     required: false
-    default: 'true'
+    default: "true"
   cache-key:
     description: Prefix for the cache key. Give jobs that build differently their own.
     required: false

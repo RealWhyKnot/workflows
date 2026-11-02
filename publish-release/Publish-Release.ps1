@@ -73,19 +73,19 @@ $prereleaseArgs = @(if ($Prerelease) { '--prerelease'; '--latest=false' })
 $draftArgs = @{ Tag = $Tag; RepoArgs = $repoArgs; AssetList = $assetList; DryRun = $DryRun.IsPresent }
 
 $lookupArgs = @('release', 'view', $Tag, '--json', 'id,isDraft') + $repoArgs
-$existing = [bool] $AssumeExisting
-$existingDraft = [bool] $AssumeDraft
+$hasExistingRelease = [bool] $AssumeExisting
+$isExistingDraft = [bool] $AssumeDraft
 if ($DryRun) {
     Write-Host "gh $($lookupArgs -join ' ')"
 } else {
     $global:LASTEXITCODE = 0
     $found = & gh @lookupArgs 2>$null
-    $existing = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($found)
-    if ($existing) { $existingDraft = [bool] ($found | ConvertFrom-Json).isDraft }
+    $hasExistingRelease = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($found)
+    if ($hasExistingRelease) { $isExistingDraft = [bool] ($found | ConvertFrom-Json).isDraft }
     $global:LASTEXITCODE = 0
 }
 
-if ($DeleteExisting -and $existing) {
+if ($DeleteExisting -and $hasExistingRelease) {
     $deleteArgs = @('release', 'delete', $Tag, '--yes') + $repoArgs
     if ($DryRun) {
         Write-Host "gh $($deleteArgs -join ' ')"
@@ -94,10 +94,10 @@ if ($DeleteExisting -and $existing) {
         if ($LASTEXITCODE -ne 0) { throw "Could not delete the existing release $Tag." }
         Write-Host "Deleted the existing release $Tag."
     }
-    $existing = $false
+    $hasExistingRelease = $false
 }
 
-if ($existing) {
+if ($hasExistingRelease) {
     $editArgs = @('release', 'edit', $Tag) + $repoArgs + $titleArgs + $prereleaseArgs
     $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun.IsPresent
     if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
@@ -107,7 +107,7 @@ if ($existing) {
         $null = Invoke-Gh -Arguments $uploadArgs -DryRun $DryRun.IsPresent
         if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     }
-    if ($existingDraft) { Publish-Draft @draftArgs }
+    if ($isExistingDraft) { Publish-Draft @draftArgs }
     Write-Host "Updated the existing release $Tag."
 } else {
     $targetArgs = @(if ($Target) { '--target'; $Target })
@@ -127,18 +127,18 @@ if ($VerifySha256 -and $VerifyAsset) {
     if ($DryRun) {
         Write-Host "gh api repos/$repo/releases/tags/$Tag (expect $VerifyAsset $expected)"
     } else {
-        $ok = $false
-        for ($i = 0; $i -lt $VerifyAttempts -and -not $ok; $i++) {
+        $hasMatchingDigest = $false
+        for ($attemptIndex = 0; $attemptIndex -lt $VerifyAttempts -and -not $hasMatchingDigest; $attemptIndex++) {
             Start-Sleep -Seconds $VerifyDelaySeconds
             $json = & gh api "repos/$repo/releases/tags/$Tag" 2>$null
-            $fetched = $LASTEXITCODE -eq 0
+            $hasFetched = $LASTEXITCODE -eq 0
             $global:LASTEXITCODE = 0
-            if (-not $fetched) { continue }
+            if (-not $hasFetched) { continue }
             $release = $json | ConvertFrom-Json
             $asset = $release.assets | Where-Object { $_.name -eq $VerifyAsset }
-            if ($asset -and $asset.digest -eq $expected) { $ok = $true }
+            if ($asset -and $asset.digest -eq $expected) { $hasMatchingDigest = $true }
         }
-        if (-not $ok) { throw "Uploaded $VerifyAsset digest does not match $expected." }
+        if (-not $hasMatchingDigest) { throw "Uploaded $VerifyAsset digest does not match $expected." }
         Write-Host "Verified $VerifyAsset digest $expected"
     }
 }

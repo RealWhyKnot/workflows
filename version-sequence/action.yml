@@ -10,11 +10,11 @@ inputs:
       Regex for the part after the hyphen in a prerelease tag, without the hyphen.
       Only decides which tags are valid. Every same-day tag counts toward the next revision, whatever its suffix.
     required: false
-    default: '[A-Za-z0-9]{4}'
+    default: "[A-Za-z0-9]{4}"
   repo-root:
     description: Repository to read tags from. Defaults to the workspace.
     required: false
-    default: ''
+    default: ""
 
 runs:
   using: composite

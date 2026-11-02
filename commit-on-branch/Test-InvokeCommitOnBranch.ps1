@@ -10,20 +10,20 @@ function Merge-Parameter {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param([hashtable] $Base, [hashtable] $Override)
-    $m = @{}
-    foreach ($k in $Base.Keys) { $m[$k] = $Base[$k] }
-    foreach ($k in $Override.Keys) { $m[$k] = $Override[$k] }
-    return $m
+    $merged = @{}
+    foreach ($key in $Base.Keys) { $merged[$key] = $Base[$key] }
+    foreach ($key in $Override.Keys) { $merged[$key] = $Override[$key] }
+    return $merged
 }
 
 function Get-Payload {
     [CmdletBinding()]
     [OutputType([string])]
     param([hashtable] $Params)
-    $p = @{} + $Params
-    $p['DryRun'] = $true
-    $p['SkipIfUnchanged'] = $false
-    $lines = foreach ($item in & $script:committer @p 2>&1) { "$item" }
+    $parameters = @{} + $Params
+    $parameters['DryRun'] = $true
+    $parameters['SkipIfUnchanged'] = $false
+    $lines = foreach ($item in & $script:committer @parameters 2>&1) { "$item" }
     return $lines -join "`n"
 }
 
@@ -53,32 +53,34 @@ try {
     $base = @{ Paths = @('CHANGELOG.md'); Headline = 'docs(changelog): promote [skip changelog]'; Repository = 'o/r' }
 
     Assert-Json -Name 'the mutation and branch are set' -Params $base -Check {
-        param([object] $o)
-        if ($o.query -notmatch 'createCommitOnBranch') { return 'query does not call the mutation' }
-        if ($o.variables.input.branch.repositoryNameWithOwner -ne 'o/r') { return 'wrong repository' }
-        if ($o.variables.input.branch.branchName -ne 'main') { return 'branch should default to main' }
+        param([object] $request)
+        if ($request.query -notmatch 'createCommitOnBranch') { return 'query does not call the mutation' }
+        if ($request.variables.input.branch.repositoryNameWithOwner -ne 'o/r') { return 'wrong repository' }
+        if ($request.variables.input.branch.branchName -ne 'main') { return 'branch should default to main' }
         return $null
     }
 
     Assert-Json -Name 'the headline is carried and no body is sent when empty' -Params $base -Check {
-        param([object] $o)
-        if ($o.variables.input.message.headline -ne 'docs(changelog): promote [skip changelog]') {
+        param([object] $request)
+        if ($request.variables.input.message.headline -ne 'docs(changelog): promote [skip changelog]') {
             return 'headline missing'
         }
-        if ($o.variables.input.message.PSObject.Properties.Name -contains 'body') { return 'body should be absent' }
+        if ($request.variables.input.message.PSObject.Properties.Name -contains 'body') {
+            return 'body should be absent'
+        }
         return $null
     }
 
     $withBody = Merge-Parameter -Base $base -Override @{ Body = 'Maintained by CI.' }
     Assert-Json -Name 'a body is included when given' -Params $withBody -Check {
-        param([object] $o)
-        if ($o.variables.input.message.body -ne 'Maintained by CI.') { return 'body missing' }
+        param([object] $request)
+        if ($request.variables.input.message.body -ne 'Maintained by CI.') { return 'body missing' }
         return $null
     }
 
     Assert-Json -Name 'the file is base64 encoded under its path' -Params $base -Check {
-        param([object] $o)
-        $add = @($o.variables.input.fileChanges.additions)
+        param([object] $request)
+        $add = @($request.variables.input.fileChanges.additions)
         if ($add.Count -ne 1) { return "expected 1 addition, got $($add.Count)" }
         if ($add[0].path -ne 'CHANGELOG.md') { return "wrong path $($add[0].path)" }
         $decoded = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($add[0].contents))
@@ -88,8 +90,8 @@ try {
 
     $twoFiles = Merge-Parameter -Base $base -Override @{ Paths = @('CHANGELOG.md', 'wiki.md') }
     Assert-Json -Name 'multiple files become multiple additions' -Params $twoFiles -Check {
-        param([object] $o)
-        $add = @($o.variables.input.fileChanges.additions)
+        param([object] $request)
+        $add = @($request.variables.input.fileChanges.additions)
         if ($add.Count -ne 2) { return "expected 2 additions, got $($add.Count)" }
         if (@($add.path) -notcontains 'wiki.md') { return 'wiki.md missing' }
         return $null
@@ -97,14 +99,14 @@ try {
 
     $release = Merge-Parameter -Base $base -Override @{ Branch = 'release' }
     Assert-Json -Name 'a custom branch is honoured' -Params $release -Check {
-        param([object] $o)
-        if ($o.variables.input.branch.branchName -ne 'release') { return 'branch not applied' }
+        param([object] $request)
+        if ($request.variables.input.branch.branchName -ne 'release') { return 'branch not applied' }
         return $null
     }
 
     Assert-Json -Name 'expectedHeadOid is always present' -Params $base -Check {
-        param([object] $o)
-        if (-not $o.variables.input.expectedHeadOid) { return 'expectedHeadOid missing' }
+        param([object] $request)
+        if (-not $request.variables.input.expectedHeadOid) { return 'expectedHeadOid missing' }
         return $null
     }
 

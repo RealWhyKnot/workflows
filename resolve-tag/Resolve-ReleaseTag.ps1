@@ -51,9 +51,9 @@ $out = [ordered]@{
 
 if ($OutputPath) {
     $outputFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
-    foreach ($k in $out.Keys) {
-        [System.IO.File]::AppendAllText($outputFile, "$k=$($out[$k])" + [Environment]::NewLine)
+    foreach ($key in $out.Keys) {
+        [System.IO.File]::AppendAllText($outputFile, "$key=$($out[$key])" + [Environment]::NewLine)
     }
 }
-foreach ($k in $out.Keys) { Write-Host "$k=$($out[$k])" }
+foreach ($key in $out.Keys) { Write-Host "$key=$($out[$key])" }
 exit 0

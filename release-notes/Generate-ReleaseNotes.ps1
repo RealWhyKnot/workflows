@@ -91,8 +91,8 @@ function Get-Category {
     if ($Subject -match '^([a-z]+)(\([^)]+\))?!:') { return 'Breaking Changes' }
     if ($Subject -match '^([a-z]+)(\([^)]+\))?:') {
         $prefix = $Matches[1]
-        foreach ($c in $Categories) {
-            if ($c.Prefix -eq $prefix) { return $c.Name }
+        foreach ($category in $Categories) {
+            if ($category.Prefix -eq $prefix) { return $category.Name }
         }
     }
     return 'Other'
@@ -155,15 +155,15 @@ if ($Title) {
 $lines.Add('## What''s Changed')
 $lines.Add('')
 
-$any = $false
+$hasEntries = $false
 foreach ($name in $Order) {
     if ($buckets[$name].Count -eq 0) { continue }
-    $any = $true
+    $hasEntries = $true
     $lines.Add("### $name")
     foreach ($entry in $buckets[$name]) { $lines.Add($entry) }
     $lines.Add('')
 }
-if (-not $any) {
+if (-not $hasEntries) {
     $lines.Add('- Maintenance release')
     $lines.Add('')
 }

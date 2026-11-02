@@ -18,16 +18,25 @@ function Invoke-Hook {
     [CmdletBinding()]
     [OutputType([int])]
     param([string] $Subject, [string] $Config = '')
-    $msg = Join-Path $script:sandbox 'msg.txt'
-    [System.IO.File]::WriteAllText($msg, "$Subject`n", (New-Object System.Text.UTF8Encoding($false)))
-    $cfg = Join-Path $script:sandbox 'hook-config'
+    $messageFile = Join-Path $script:sandbox 'msg.txt'
+    [System.IO.File]::WriteAllText($messageFile, "$Subject`n", (New-Object System.Text.UTF8Encoding($false)))
+    $configFile = Join-Path $script:sandbox 'hook-config'
     if ($Config) {
-        [System.IO.File]::WriteAllText($cfg, "$Config`n", (New-Object System.Text.UTF8Encoding($false)))
-    } elseif (Test-Path $cfg) {
-        Remove-Item $cfg -Force
+        [System.IO.File]::WriteAllText($configFile, "$Config`n", (New-Object System.Text.UTF8Encoding($false)))
+    } elseif (Test-Path $configFile) {
+        Remove-Item $configFile -Force
     }
     Copy-Item (Join-Path $script:hooksDir 'commit-msg') (Join-Path $script:sandbox 'commit-msg') -Force
-    $null = & bash (Join-Path $script:sandbox 'commit-msg') $msg 2>&1
+    $null = & bash (Join-Path $script:sandbox 'commit-msg') $messageFile 2>&1
+    return $LASTEXITCODE
+}
+
+function Invoke-PrepareHook {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param([string] $Message, [string] $Source = '')
+    $clock = 'date() { printf "%s\n" "2026.9.8"; }; export -f date; exec bash "$@"'
+    $null = & bash -c $clock -- '.githooks/prepare-commit-msg' $Message $Source 2>&1
     return $LASTEXITCODE
 }
 
@@ -92,6 +101,22 @@ if ($bash) {
         $narrowed = "STAMP_PATTERN='\(2026\.[0-9]+\.[0-9]+\.[0-9]+-[A-F0-9]{4}\)'"
         Assert -Name 'a narrowed STAMP_PATTERN ignores a beta stamp' -Condition (
             (Invoke-Hook -Subject 'fix: it (2026.9.8.1-beta) (2026.9.8.2-beta)' -Config $narrowed) -eq 0)
+        $forms = @(
+            "CHECK_STAMP=0`nCHECK_CONVENTIONAL=1"
+            "CHECK_STAMP='0'`nCHECK_CONVENTIONAL='1'"
+            'CHECK_STAMP="0"' + "`n" + 'CHECK_CONVENTIONAL="1"'
+            "  CHECK_STAMP=0`n  CHECK_CONVENTIONAL=1`n"
+        )
+        foreach ($config in $forms) {
+            Assert -Name 'combined numeric settings accept two conventional stamps' -Condition (
+                (Invoke-Hook -Subject $twoStamps -Config $config) -eq 0)
+            Assert -Name 'combined numeric settings still reject a plain subject' -Condition (
+                (Invoke-Hook -Subject 'made changes' -Config $config) -ne 0)
+        }
+        Assert -Name 'a custom conventional pattern is used' -Condition (
+            (Invoke-Hook -Subject 'ship: release' -Config "CHECK_CONVENTIONAL=1`nCONVENTIONAL_PATTERN='^ship: '") -eq 0)
+        Assert -Name 'a custom conventional pattern rejects the default' -Condition (
+            (Invoke-Hook -Subject 'feat: release' -Config "CHECK_CONVENTIONAL=1`nCONVENTIONAL_PATTERN='^ship: '") -ne 0)
         $repo = Join-Path $sandbox 'repo'
         $null = New-Item -ItemType Directory -Path $repo -Force
         Push-Location $repo
@@ -103,20 +128,23 @@ if ($bash) {
             $prepareSource = Join-Path $script:hooksDir 'prepare-commit-msg'
             Copy-Item $prepareSource (Join-Path $repo '.githooks/prepare-commit-msg') -Force
 
-            $today = Get-Date -Format 'yyyy.M.d'
+            $today = '2026.9.8'
             $stamp = "$today.42-ABCD"
 
-            $gitPath = (& git rev-parse --git-path 'app-version.txt').Trim()
+            $gitPath = (& git rev-parse --git-path 'commit-version.txt').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the test version file.' }
             $private = if ([System.IO.Path]::IsPathRooted($gitPath)) { $gitPath } else { Join-Path $repo $gitPath }
             $null = New-Item -ItemType Directory -Path (Split-Path -Parent $private) -Force
             [System.IO.File]::WriteAllText($private, $stamp)
             [System.IO.File]::WriteAllText(
-                (Join-Path $repo '.githooks/hook-config'), "VERSION_FILE='app-version.txt'`nVERSION_IN_GITDIR=1`n")
+                (Join-Path $repo '.githooks/hook-config'),
+                "VERSION_FILE='commit-version.txt'`nVERSION_IN_GITDIR=1`nCHECK_CONVENTIONAL=1`n")
 
-            $msg = Join-Path $repo 'msg.txt'
-            [System.IO.File]::WriteAllText($msg, "docs: sample`n")
-            $null = & bash '.githooks/prepare-commit-msg' $msg 2>&1
-            $subject = ([System.IO.File]::ReadAllText($msg) -split "`n")[0].Trim()
+            $messageFile = Join-Path $repo 'msg.txt'
+            [System.IO.File]::WriteAllText($messageFile, "docs: sample`n")
+            $prepareExit = Invoke-PrepareHook -Message $messageFile
+            Assert -Name 'prepare accepts the existing quoted version-file config' -Condition ($prepareExit -eq 0)
+            $subject = ([System.IO.File]::ReadAllText($messageFile) -split "`n")[0].Trim()
 
             Assert -Name 'the git-dir version file supplies the stamp' -Condition (
                 $subject -eq "docs: sample ($stamp)") -Detail "got '$subject'"
@@ -126,21 +154,22 @@ if ($bash) {
             $null = & git commit --allow-empty --quiet -m 'base' 2>&1
             $prefix = (& git rev-parse HEAD).Trim().Substring(0, 4)
             $sha1 = [System.Security.Cryptography.SHA1]::Create()
-            $n = 0
+            $candidateNumber = 0
             do {
-                $n++
-                $body = [System.Text.Encoding]::ASCII.GetBytes("$n")
+                $candidateNumber++
+                $body = [System.Text.Encoding]::ASCII.GetBytes("$candidateNumber")
                 $header = [System.Text.Encoding]::ASCII.GetBytes("blob $($body.Length)`0")
                 $digest = $sha1.ComputeHash([byte[]]($header + $body))
                 $hash = [System.BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
             } until ($hash.StartsWith($prefix))
             $twin = Join-Path $sandbox 'twin.txt'
-            [System.IO.File]::WriteAllText($twin, "$n")
+            [System.IO.File]::WriteAllText($twin, "$candidateNumber")
             $null = & git hash-object -w $twin
             Remove-Item -LiteralPath $private -Force
-            [System.IO.File]::WriteAllText($msg, "docs: fresh day`n")
-            $null = & bash '.githooks/prepare-commit-msg' $msg 2>&1
-            $subject = ([System.IO.File]::ReadAllText($msg) -split "`n")[0].Trim()
+            [System.IO.File]::WriteAllText($messageFile, "docs: fresh day`n")
+            $prepareExit = Invoke-PrepareHook -Message $messageFile
+            Assert -Name 'prepare creates a new version successfully' -Condition ($prepareExit -eq 0)
+            $subject = ([System.IO.File]::ReadAllText($messageFile) -split "`n")[0].Trim()
             $head = (& git rev-parse HEAD).Trim().Substring(0, 4).ToUpperInvariant()
             Assert -Name 'a new day stamps exactly four hex digits of HEAD' -Condition (
                 $subject -eq "docs: fresh day ($today.0-$head)") -Detail "got '$subject'"

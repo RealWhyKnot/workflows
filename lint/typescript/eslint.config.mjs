@@ -11,8 +11,9 @@ const root = import.meta.dirname;
 const load = async (name) => {
   try {
     import.meta.resolve(name);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ERR_MODULE_NOT_FOUND") return null;
+    throw error;
   }
   return (await import(name)).default;
 };
@@ -21,7 +22,7 @@ const vue = await load("eslint-plugin-vue");
 const svelte = await load("eslint-plugin-svelte");
 const astro = await load("eslint-plugin-astro");
 
-const off = (level) => level === "off" || level === 0;
+const isOff = (level) => level === "off" || level === 0;
 const asErrors = (configs) =>
   [configs].flat().map((config) =>
     config.rules
@@ -29,8 +30,8 @@ const asErrors = (configs) =>
           ...config,
           rules: Object.fromEntries(
             Object.entries(config.rules).map(([rule, value]) => {
-              if (Array.isArray(value)) return [rule, off(value[0]) ? value : ["error", ...value.slice(1)]];
-              return [rule, off(value) ? value : "error"];
+              if (Array.isArray(value)) return [rule, isOff(value[0]) ? value : ["error", ...value.slice(1)]];
+              return [rule, isOff(value) ? value : "error"];
             })
           ),
         }

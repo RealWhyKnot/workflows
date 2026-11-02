@@ -13,15 +13,15 @@ inputs:
   tag-glob:
     description: Glob for finding the nearest tag.
     required: false
-    default: 'v*'
+    default: "v*"
   ignore-paths:
     description: Newline-separated path globs that never change the program, added to the beta gate defaults.
     required: false
-    default: ''
+    default: ""
   release-types:
     description: Conventional commit types that ship. Empty uses the beta gate defaults.
     required: false
-    default: ''
+    default: ""
 
 outputs:
   has_changes:

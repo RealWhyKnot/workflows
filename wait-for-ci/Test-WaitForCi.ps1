@@ -103,61 +103,62 @@ $script:waiter = Join-Path $PSScriptRoot 'Wait-ForCi.ps1'
 $script:failures = 0
 $script:repo = 'o/r'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run) } -Commits @{ c0 = New-Commit -Parent 'c1' }
-Assert-Wait -Name 'a passing run on the commit passes' -Result $r -Code 0 -Contains 'sha=c0'
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run) } -Commits @{ c0 = New-Commit -Parent 'c1' }
+Assert-Wait -Name 'a passing run on the commit passes' -Result $result -Code 0 -Contains 'sha=c0'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run -Conclusion 'failure') } -Commits @{ c0 = New-Commit -Parent 'c1' }
-Assert-Wait -Name 'a failed run fails' -Result $r -Code 1 -Contains 'did not pass on c0'
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run -Conclusion 'failure') } -Commits @{ c0 = New-Commit -Parent 'c1' }
+Assert-Wait -Name 'a failed run fails' -Result $result -Code 1 -Contains 'did not pass on c0'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run -Conclusion 'failure'); c1 = @(New-Run) } -Commits @{
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run -Conclusion 'failure'); c1 = @(New-Run) } -Commits @{
     c0 = New-Commit -Parent 'c1'; c1 = New-Commit -Parent 'c2'
 }
-Assert-Wait -Name 'a failed run is not rescued by a passing ancestor' -Result $r -Code 1
+Assert-Wait -Name 'a failed run is not rescued by a passing ancestor' -Result $result -Code 1
 
-$r = Invoke-Wait -Runs @{ c0 = @((New-Run -Conclusion 'failure' -Id 1), (New-Run -Id 2)) } -Commits @{
+$result = Invoke-Wait -Runs @{ c0 = @((New-Run -Conclusion 'failure' -Id 1), (New-Run -Id 2)) } -Commits @{
     c0 = New-Commit -Parent 'c1'
 }
-Assert-Wait -Name 'a re-run that passed counts even after a failed attempt' -Result $r -Code 0 -Contains 'runs/2'
+Assert-Wait -Name 'a re-run that passed counts even after a failed attempt' -Result $result -Code 0 -Contains 'runs/2'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run -RunEvent 'pull_request') } -Commits @{ c0 = New-Commit } -Timeout 0
-Assert-Wait -Name 'pull request runs are ignored' -Result $r -Code 1
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run -RunEvent 'pull_request') } -Commits @{ c0 = New-Commit } -Timeout 0
+Assert-Wait -Name 'pull request runs are ignored' -Result $result -Code 1
 
-$r = Invoke-Wait -Runs @{ c1 = @(New-Run) } -Commits @{
+$result = Invoke-Wait -Runs @{ c1 = @(New-Run) } -Commits @{
     c0 = (New-Commit -Parent 'c1' -Author 'github-actions[bot]'); c1 = New-Commit -Parent 'c2'
 } -Grace 5 -Timeout 0
-Assert-Wait -Name 'a bot commit with no run falls back to its parent at once' -Result $r -Code 0 -Contains 'sha=c1'
+Assert-Wait -Name 'a bot commit with no run falls back to its parent at once' -Result $result -Code 0 -Contains 'sha=c1'
 
-$r = Invoke-Wait -Runs @{ c1 = @(New-Run) } -Commits @{
+$result = Invoke-Wait -Runs @{ c1 = @(New-Run) } -Commits @{
     c0 = New-Commit -Parent 'c1'; c1 = New-Commit -Parent 'c2'
 } -Grace 5 -Timeout 1
-Assert-Wait -Name 'a human commit with no run waits out the grace period first' -Result $r -Code 1 -Contains (
+Assert-Wait -Name 'a human commit with no run waits out the grace period first' -Result $result -Code 1 -Contains (
     'No ci.yml run on c0 yet')
 
-$r = Invoke-Wait -Runs @{ c2 = @(New-Run) } -Commits @{
+$result = Invoke-Wait -Runs @{ c2 = @(New-Run) } -Commits @{
     c0 = New-Commit -Parent 'c1'; c1 = New-Commit -Parent 'c2'; c2 = New-Commit -Parent 'c3'
 } -Grace 0
-Assert-Wait -Name 'after the grace period the nearest ancestor with a run decides' -Result $r -Code 0 -Contains 'sha=c2'
+Assert-Wait -Name ('after the grace period the nearest ancestor with a run decides') -Result $result -Code 0 -Contains (
+    'sha=c2')
 
-$r = Invoke-Wait -Runs @{ c1 = @(New-Run -Conclusion 'failure') } -Commits @{
+$result = Invoke-Wait -Runs @{ c1 = @(New-Run -Conclusion 'failure') } -Commits @{
     c0 = New-Commit -Parent 'c1'; c1 = New-Commit -Parent 'c2'
 }
-Assert-Wait -Name 'a failing ancestor fails the check' -Result $r -Code 1 -Contains 'did not pass on c1'
+Assert-Wait -Name 'a failing ancestor fails the check' -Result $result -Code 1 -Contains 'did not pass on c1'
 
-$r = Invoke-Wait -Runs @{} -Commits @{ c0 = New-Commit -Parent 'c1'; c1 = New-Commit }
-Assert-Wait -Name 'running out of history fails' -Result $r -Code 1 -Contains 'No ci.yml run'
+$result = Invoke-Wait -Runs @{} -Commits @{ c0 = New-Commit -Parent 'c1'; c1 = New-Commit }
+Assert-Wait -Name 'running out of history fails' -Result $result -Code 1 -Contains 'No ci.yml run'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run -Status 'in_progress' -Conclusion '') } -Commits @{
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run -Status 'in_progress' -Conclusion '') } -Commits @{
     c0 = New-Commit -Parent 'c1'
 } -Timeout 5 -Change {
-    param([hashtable] $s)
-    if ($s.Minutes -ge 1) { $s.Runs['c0'] = @(New-Run) }
+    param([hashtable] $state)
+    if ($state.Minutes -ge 1) { $state.Runs['c0'] = @(New-Run) }
 }
-Assert-Wait -Name 'a run still going is waited on until it passes' -Result $r -Code 0 -Contains 'sha=c0'
+Assert-Wait -Name 'a run still going is waited on until it passes' -Result $result -Code 0 -Contains 'sha=c0'
 
-$r = Invoke-Wait -Runs @{ c0 = @(New-Run -Status 'in_progress' -Conclusion '') } -Commits @{
+$result = Invoke-Wait -Runs @{ c0 = @(New-Run -Status 'in_progress' -Conclusion '') } -Commits @{
     c0 = New-Commit -Parent 'c1'
 } -Timeout 1
-Assert-Wait -Name 'a run still going past the timeout fails' -Result $r -Code 1 -Contains 'Gave up after 1 minutes'
+Assert-Wait -Name 'a run still going past the timeout fails' -Result $result -Code 1 -Contains 'Gave up after 1 minutes'
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }
 Write-Host "`nAll checks passed."

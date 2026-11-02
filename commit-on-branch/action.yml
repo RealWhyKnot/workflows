@@ -11,7 +11,7 @@ inputs:
   body:
     description: Commit body. Omitted when empty.
     required: false
-    default: ''
+    default: ""
   branch:
     description: Branch to commit onto.
     required: false
@@ -19,19 +19,19 @@ inputs:
   repository:
     description: owner/name to commit to. Defaults to the calling repository.
     required: false
-    default: ''
+    default: ""
   skip-if-unchanged:
     description: Do nothing when the files already match the branch tip.
     required: false
-    default: 'true'
+    default: "true"
   verify-signature:
     description: Fail unless GitHub reports the new commit as verified.
     required: false
-    default: 'true'
+    default: "true"
   warn-on-failure:
     description: Warn and succeed instead of failing the job.
     required: false
-    default: 'false'
+    default: "false"
 
 runs:
   using: composite

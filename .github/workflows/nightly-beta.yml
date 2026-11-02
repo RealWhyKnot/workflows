@@ -22,7 +22,7 @@ on:
         description: Suffix regex the sequence check accepts on the new tag.
         type: string
         required: false
-        default: '[A-Za-z0-9]{4}'
+        default: "[A-Za-z0-9]{4}"
       dispatch-release:
         description: Kick release.yml with the new tag, for repos whose release runs on tag push.
         type: boolean
@@ -32,19 +32,19 @@ on:
         description: Newline-separated path globs that never change the program, added to the beta gate defaults.
         type: string
         required: false
-        default: ''
+        default: ""
       release-types:
         description: Conventional commit types that ship. Empty uses the beta gate defaults.
         type: string
         required: false
-        default: ''
+        default: ""
       ci-workflow:
         description: >-
           Workflow file whose push run must pass on the commit before it is tagged, for example ci.yml.
           Empty skips the check. The caller needs actions read permission.
         type: string
         required: false
-        default: ''
+        default: ""
     outputs:
       tag:
         description: The tag that was pushed, empty when nothing changed.

@@ -5,7 +5,7 @@ inputs:
   root:
     description: Repository root to check. Defaults to the workspace.
     required: false
-    default: ''
+    default: ""
   shared-ref:
     description: The ref every RealWhyKnot/workflows reference must use.
     required: false
@@ -17,7 +17,7 @@ inputs:
   ignore-ecosystems:
     description: Newline-separated Dependabot ecosystems this repo deliberately leaves out.
     required: false
-    default: ''
+    default: ""
 
 runs:
   using: composite

@@ -5,7 +5,7 @@ inputs:
   sha:
     description: Commit to check. Defaults to the triggering commit.
     required: false
-    default: ''
+    default: ""
   workflow:
     description: Workflow file name whose runs count.
     required: false
@@ -13,19 +13,19 @@ inputs:
   repository:
     description: owner/name. Defaults to the calling repository.
     required: false
-    default: ''
+    default: ""
   timeout-minutes:
     description: How long to wait for a run that is still going.
     required: false
-    default: '20'
+    default: "20"
   grace-minutes:
     description: How long a commit with no run yet gets before its ancestors are checked instead. Bot commits skip the wait.
     required: false
-    default: '3'
+    default: "3"
   max-depth:
     description: How many first-parent ancestors to look through for a run.
     required: false
-    default: '30'
+    default: "30"
 
 outputs:
   sha:

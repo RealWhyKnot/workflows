@@ -135,7 +135,7 @@ function Get-NextRelease {
     }
     $latest = $releases[-1]
     $base = @(Invoke-Git -Root $Root -Arguments @('merge-base', $latest.Name, $Ref))[0]
-    $shipped = $false
+    $hasShipped = $false
     foreach ($commit in @(Get-ReleaseCommit -Root $Root -Range "$base..$Ref")) {
         if ($commit.Subject -match $script:breakingPattern) {
             throw ("$($commit.Sha.Substring(0, 7)) '$($commit.Subject)' is a breaking change. " +
@@ -143,11 +143,11 @@ function Get-NextRelease {
         }
         foreach ($path in $commit.Paths) {
             if (Test-ShippedPath -Path $path) {
-                $shipped = $true
+                $hasShipped = $true
             }
         }
     }
-    if (-not $shipped) {
+    if (-not $hasShipped) {
         return $null
     }
     [pscustomobject]@{

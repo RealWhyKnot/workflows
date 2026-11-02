@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import ast
+import logging
 import re
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 VENDORED_FILE = "vendored-paths.txt"
 VENDORED_PLACES = (".", "../../../common/.github/lint")
@@ -80,7 +87,7 @@ class FileCheck:
     path: Path
     aliases: dict[str, str]
     is_firmware: bool
-    uses_aioble: bool
+    has_aioble: bool
     findings: list[Finding] = field(default_factory=list[Finding])
     base_errors: list[ast.ClassDef] = field(default_factory=list[ast.ClassDef])
 
@@ -164,8 +171,8 @@ def reports_error(node: ast.AST) -> bool:
         return True
     if not isinstance(node, ast.Call):
         return False
-    logs_traceback = isinstance(node.func, ast.Attribute) and node.func.attr == "exception"
-    return logs_traceback or has_keyword(node, "exc_info")
+    has_traceback_logging = isinstance(node.func, ast.Attribute) and node.func.attr == "exception"
+    return has_traceback_logging or has_keyword(node, "exc_info")
 
 
 def check_handler(check: FileCheck, handler: ast.ExceptHandler) -> None:
@@ -206,7 +213,7 @@ def check_patch(check: FileCheck, call: ast.Call, name: str) -> None:
 
 
 def check_ble_wait(check: FileCheck, call: ast.Call) -> None:
-    if not (check.is_firmware and check.uses_aioble and isinstance(call.func, ast.Attribute)):
+    if not (check.is_firmware and check.has_aioble and isinstance(call.func, ast.Attribute)):
         return
     if call.func.attr in BLE_WAITS and not has_keyword(call, "timeout_ms"):
         check.add(call, "PY-30", f"{call.func.attr}() needs timeout_ms=")
@@ -241,8 +248,8 @@ def check_statement(check: FileCheck, node: ast.AST, scope: Scope) -> None:
         is_text = isinstance(value, ast.JoinedStr) or (
             isinstance(value, ast.Constant) and isinstance(value.value, str | bytes)
         )
-        rebuilt = isinstance(node.target, ast.Name) and node.target.id in scope.loops[-1]
-        if is_text and not rebuilt:
+        is_rebuilt = isinstance(node.target, ast.Name) and node.target.id in scope.loops[-1]
+        if is_text and not is_rebuilt:
             check.add(node, "PY-16", "build strings with ''.join(parts) or io.StringIO, not += in a loop")
     elif isinstance(node, ast.Call):
         check_call(check, node, scope)
@@ -274,9 +281,12 @@ def is_fixed_tuple(annotation: ast.expr) -> bool:
     if not isinstance(annotation, ast.Subscript) or not isinstance(annotation.slice, ast.Tuple):
         return False
     items = annotation.slice.elts
-    open_ended = any(isinstance(item, ast.Constant) and item.value is Ellipsis for item in items)
+    is_open_ended = any(isinstance(item, ast.Constant) and item.value is Ellipsis for item in items)
     return (
-        isinstance(annotation.value, ast.Name) and annotation.value.id == "tuple" and len(items) > 1 and not open_ended
+        isinstance(annotation.value, ast.Name)
+        and annotation.value.id == "tuple"
+        and len(items) > 1
+        and not is_open_ended
     )
 
 
@@ -325,9 +335,9 @@ def is_main_guard(statement: ast.stmt) -> bool:
     if not isinstance(statement, ast.If) or not isinstance(statement.test, ast.Compare):
         return False
     test = statement.test
-    left_is_name = isinstance(test.left, ast.Name) and test.left.id == "__name__"
+    is_name_on_left = isinstance(test.left, ast.Name) and test.left.id == "__name__"
     right = test.comparators[0] if len(test.comparators) == 1 else None
-    return left_is_name and isinstance(right, ast.Constant) and right.value == "__main__"
+    return is_name_on_left and isinstance(right, ast.Constant) and right.value == "__main__"
 
 
 def is_main_exit(statement: ast.stmt) -> bool:
@@ -335,9 +345,9 @@ def is_main_exit(statement: ast.stmt) -> bool:
         return False
     outer = statement.exc
     inner = outer.args[0] if len(outer.args) == 1 and not outer.keywords else None
-    calls_main = isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "main"
-    plain = calls_main and isinstance(inner, ast.Call) and not inner.args and not inner.keywords
-    return isinstance(outer.func, ast.Name) and outer.func.id == "SystemExit" and plain
+    is_main_call = isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "main"
+    is_plain_call = is_main_call and isinstance(inner, ast.Call) and not inner.args and not inner.keywords
+    return isinstance(outer.func, ast.Name) and outer.func.id == "SystemExit" and is_plain_call
 
 
 def runs_unittest(check: FileCheck, statement: ast.stmt) -> bool:
@@ -402,19 +412,19 @@ def parse(path: Path) -> ast.Module | Finding:
 def check_file(path: Path, root: Path) -> FileCheck:
     tree = parse(path)
     if isinstance(tree, Finding):
-        return FileCheck(path=path, aliases={}, is_firmware=False, uses_aioble=False, findings=[tree])
+        return FileCheck(path=path, aliases={}, is_firmware=False, has_aioble=False, findings=[tree])
     aliases = import_aliases(tree)
     parts = path.relative_to(root).parts
-    uses_aioble = any(name.startswith("aioble") for name in aliases.values())
-    check = FileCheck(path=path, aliases=aliases, is_firmware="firmware" in parts, uses_aioble=uses_aioble)
+    has_aioble = any(name.startswith("aioble") for name in aliases.values())
+    check = FileCheck(path=path, aliases=aliases, is_firmware="firmware" in parts, has_aioble=has_aioble)
     visit(check, tree, Scope())
     if not check.is_firmware and path.name != "__main__.py":
         for statement in tree.body:
             check_top_level(check, statement)
-    in_tests = "tests" in parts[:-1]
-    if in_tests and not path.name.startswith("test_") and defines_test_case(check, tree):
+    is_in_tests = "tests" in parts[:-1]
+    if is_in_tests and not path.name.startswith("test_") and defines_test_case(check, tree):
         check.add_at(1, 0, "PY-25", "a file with TestCase classes is named tests/test_<module>.py")
-    if not in_tests:
+    if not is_in_tests:
         check.base_errors.extend(base_errors(check, tree))
     return check
 
@@ -559,7 +569,13 @@ def check_paths(sources: list[Path], projects: list[Path], base: Path) -> list[F
     return findings + check_base_errors(packages)
 
 
+def report_unhandled(error_type: type[BaseException], error: BaseException, traceback: TracebackType | None) -> None:
+    logging.getLogger(__name__).error("Python style check failed", exc_info=(error_type, error, traceback))
+    sys.stderr.write("Python style check failed; fix the error above and run it again.\n")
+
+
 def main() -> int:
+    sys.excepthook = report_unhandled
     roots = [Path(argument).resolve() for argument in sys.argv[1:]] or [Path.cwd()]
     try:
         findings = [finding for root in roots for finding in check_tree(root)]

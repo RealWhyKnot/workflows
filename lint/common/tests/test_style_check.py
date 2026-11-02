@@ -494,8 +494,11 @@ class ConfigTests(RepoCase):
         self.assert_findings(
             [
                 ".github/lint/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
-                ".github/lint/unity/App/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
-                ".github/lint/unity/Directory.Build.targets:3: project setting loosens the baseline (GEN-4)",
+                (
+                    ".github/lint/unity/App/Directory.Build.props: "
+                    "nested lint or format config overrides the baseline (GEN-5)"
+                ),
+                (".github/lint/unity/Directory.Build.targets:3: project setting loosens the baseline (GEN-4)"),
                 "headless/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
                 "tools/Directory.Build.props: nested lint or format config overrides the baseline (GEN-5)",
             ]

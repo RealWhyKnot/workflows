@@ -11,19 +11,19 @@ function Get-PwshRunBlock {
     [OutputType([array])]
     param([string[]] $Lines = @())
 
-    for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -notmatch '^(\s*)run:\s*\|\s*$') { continue }
+    for ($lineIndex = 0; $lineIndex -lt $Lines.Count; $lineIndex++) {
+        if ($Lines[$lineIndex] -notmatch '^(\s*)run:\s*\|\s*$') { continue }
         $indent = $Matches[1].Length
         $body = [System.Collections.Generic.List[object]]::new()
-        for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
-            $line = $Lines[$j]
+        for ($bodyIndex = $lineIndex + 1; $bodyIndex -lt $Lines.Count; $bodyIndex++) {
+            $line = $Lines[$bodyIndex]
             if ($line.Trim() -eq '') {
-                $body.Add([pscustomobject]@{ Number = $j + 1; Text = '' })
+                $body.Add([pscustomobject]@{ Number = $bodyIndex + 1; Text = '' })
                 continue
             }
             $lead = $line.Length - $line.TrimStart().Length
             if ($lead -le $indent) { break }
-            $body.Add([pscustomobject]@{ Number = $j + 1; Text = $line })
+            $body.Add([pscustomobject]@{ Number = $bodyIndex + 1; Text = $line })
         }
         , $body.ToArray()
     }
@@ -36,12 +36,12 @@ $checked = 0
 foreach ($workflow in @(Get-ChildItem -LiteralPath $workflowDir -Filter '*.yml' | Sort-Object -Property Name)) {
     $lines = [System.IO.File]::ReadAllLines($workflow.FullName)
     foreach ($block in Get-PwshRunBlock -Lines $lines) {
-        for ($k = 0; $k -lt $block.Count; $k++) {
-            if ($block[$k].Text -notmatch '^\s*&\s*\$') { continue }
+        for ($statementIndex = 0; $statementIndex -lt $block.Count; $statementIndex++) {
+            if ($block[$statementIndex].Text -notmatch '^\s*&\s*\$') { continue }
             $checked++
-            $previous = if ($k -gt 0) { $block[$k - 1].Text.Trim() } else { '' }
+            $previous = if ($statementIndex -gt 0) { $block[$statementIndex - 1].Text.Trim() } else { '' }
             if ($previous -ne '$global:LASTEXITCODE = 0') {
-                $where = "$($workflow.Name):$($block[$k].Number)"
+                $where = "$($workflow.Name):$($block[$statementIndex].Number)"
                 $failures.Add("$where invokes a script without resetting `$global:LASTEXITCODE first.")
             }
         }

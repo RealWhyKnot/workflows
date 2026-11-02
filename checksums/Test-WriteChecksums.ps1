@@ -41,8 +41,10 @@ $previousDirectory = [System.IO.Directory]::GetCurrentDirectory()
 Push-Location $sandbox
 [System.IO.Directory]::SetCurrentDirectory($sandbox)
 try {
-    [System.IO.File]::WriteAllBytes('app-1.0.0-win-x64.zip', [byte[]]@(foreach ($i in 1..1024) { $i % 256 }))
-    [System.IO.File]::WriteAllBytes('app-1.0.0-linux-x64.tar.gz', [byte[]]@(foreach ($i in 1..2048) { $i % 256 }))
+    $windowsBytes = [byte[]]@(foreach ($position in 1..1024) { $position % 256 })
+    $linuxBytes = [byte[]]@(foreach ($position in 1..2048) { $position % 256 })
+    [System.IO.File]::WriteAllBytes('app-1.0.0-win-x64.zip', $windowsBytes)
+    [System.IO.File]::WriteAllBytes('app-1.0.0-linux-x64.tar.gz', $linuxBytes)
     $null = New-Item -ItemType Directory -Force -Path 'payload/nested'
     [System.IO.File]::WriteAllText('payload/app.exe', 'binary')
     [System.IO.File]::WriteAllText('payload/nested/data.bin', 'more')
@@ -84,13 +86,14 @@ try {
     $null = & $writer -Archives @('app-1.0.0-win-x64.zip') -TableFile 'table.md'
     Assert-Equal -Actual (Test-Path 'table.md') -Expected 'True' -Because '-TableFile writes the markdown out'
 
-    $threw = $false
+    $hasThrown = $false
     try {
         $null = & $writer -Archives @('nothing-here-*.zip')
     } catch [System.Management.Automation.RuntimeException] {
-        $threw = $true
+        $hasThrown = $true
     }
-    Assert-Equal -Actual "$threw" -Expected 'True' -Because 'a pattern matching nothing is an error, not an empty table'
+    Assert-Equal -Actual "$hasThrown" -Expected 'True' -Because (
+        'a pattern matching nothing is an error, not an empty table')
 
     $null = New-Item -ItemType Directory -Force -Path 'sib/app-2.0.0-win-x64'
     [System.IO.File]::WriteAllText((Join-Path $sandbox 'sib/app-2.0.0-win-x64/only.txt'), 'inside')

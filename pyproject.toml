@@ -1,0 +1,7 @@
+[project]
+name = "workflow-checks"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = ["ruff==0.17.0", "pyright==1.1.414"]

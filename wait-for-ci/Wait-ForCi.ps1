@@ -23,10 +23,10 @@ function Set-Output {
     [CmdletBinding()]
     [OutputType([void])]
     param([hashtable] $Values, [string] $OutputPath)
-    foreach ($k in $Values.Keys) {
+    foreach ($key in $Values.Keys) {
         if ($OutputPath) {
             $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
-            [System.IO.File]::AppendAllText($path, "$k=$($Values[$k])" + [Environment]::NewLine)
+            [System.IO.File]::AppendAllText($path, "$key=$($Values[$key])" + [Environment]::NewLine)
         }
     }
 }
@@ -105,9 +105,9 @@ if (-not $Api) {
     $Api = {
         param([string] $Path)
         $json = & gh api $Path 2>$null
-        $ok = $LASTEXITCODE -eq 0
+        $hasFetched = $LASTEXITCODE -eq 0
         $global:LASTEXITCODE = 0
-        if (-not $ok) { return $null }
+        if (-not $hasFetched) { return $null }
         return ($json | Out-String | ConvertFrom-Json)
     }
 }

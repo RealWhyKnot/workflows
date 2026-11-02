@@ -36,35 +36,35 @@ function Write-Failure {
     return 1
 }
 
-$files = @(foreach ($p in $Paths) { if ($p -and $p.Trim()) { $p.Trim() } })
+$files = @(foreach ($path in $Paths) { if ($path -and $path.Trim()) { $path.Trim() } })
 if (-not $files) { Write-Host 'No paths given; nothing to commit.'; exit 0 }
 
-foreach ($f in $files) {
-    if (-not (Test-Path -LiteralPath $f)) {
-        Write-Host "::error::File not found: $f"
+foreach ($file in $files) {
+    if (-not (Test-Path -LiteralPath $file)) {
+        Write-Host "::error::File not found: $file"
         exit 1
     }
 }
 
 if ($SkipIfUnchanged -and -not $DryRun) {
-    $changed = $false
-    foreach ($f in $files) {
-        $remotePath = $f.Replace([char]92, [char]47)
+    $hasChanges = $false
+    foreach ($file in $files) {
+        $remotePath = $file.Replace([char]92, [char]47)
         $encoded = & gh api "repos/$Repository/contents/$remotePath`?ref=$Branch" --jq '.content' 2>$null
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encoded)) {
-            $changed = $true
+            $hasChanges = $true
             $global:LASTEXITCODE = 0
             break
         }
         $global:LASTEXITCODE = 0
         $remoteBytes = [Convert]::FromBase64String((($encoded -join '') -replace '\s', ''))
-        $localBytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $f).Path)
+        $localBytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $file).Path)
         if ([Convert]::ToBase64String($remoteBytes) -ne [Convert]::ToBase64String($localBytes)) {
-            $changed = $true
+            $hasChanges = $true
             break
         }
     }
-    if (-not $changed) { Write-Host "Every file already matches $Branch; nothing to commit."; exit 0 }
+    if (-not $hasChanges) { Write-Host "Every file already matches $Branch; nothing to commit."; exit 0 }
 }
 
 $expectedOid = ''
@@ -78,8 +78,8 @@ if ($DryRun) {
     $expectedOid = $expectedOid.Trim()
 }
 
-$additions = @(foreach ($f in $files) {
-        @{ path = $f.Replace([char]92, [char]47); contents = (Get-Base64 -Path $f) }
+$additions = @(foreach ($file in $files) {
+        @{ path = $file.Replace([char]92, [char]47); contents = (Get-Base64 -Path $file) }
     })
 
 $message = @{ headline = $Headline }

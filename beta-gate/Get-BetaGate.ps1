@@ -19,11 +19,11 @@ function Set-Output {
         [System.Collections.Specialized.OrderedDictionary] $Values,
         [string] $OutputPath
     )
-    foreach ($k in $Values.Keys) {
-        Write-Host "$k=$($Values[$k])"
+    foreach ($key in $Values.Keys) {
+        Write-Host "$key=$($Values[$key])"
         if ($OutputPath) {
             $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
-            [System.IO.File]::AppendAllText($path, "$k=$($Values[$k])" + [Environment]::NewLine)
+            [System.IO.File]::AppendAllText($path, "$key=$($Values[$key])" + [Environment]::NewLine)
         }
     }
 }
@@ -45,14 +45,14 @@ function ConvertTo-PathRegex {
     [OutputType([regex])]
     param([string] $Glob)
     $sb = [System.Text.StringBuilder]::new('^')
-    $i = 0
-    while ($i -lt $Glob.Length) {
-        $rest = $Glob.Substring($i)
-        if ($rest.StartsWith('**/')) { $null = $sb.Append('(?:.*/)?'); $i += 3 }
-        elseif ($rest.StartsWith('**')) { $null = $sb.Append('.*'); $i += 2 }
-        elseif ($rest[0] -eq '*') { $null = $sb.Append('[^/]*'); $i++ }
-        elseif ($rest[0] -eq '?') { $null = $sb.Append('[^/]'); $i++ }
-        else { $null = $sb.Append([regex]::Escape([string] $rest[0])); $i++ }
+    $position = 0
+    while ($position -lt $Glob.Length) {
+        $rest = $Glob.Substring($position)
+        if ($rest.StartsWith('**/')) { $null = $sb.Append('(?:.*/)?'); $position += 3 }
+        elseif ($rest.StartsWith('**')) { $null = $sb.Append('.*'); $position += 2 }
+        elseif ($rest[0] -eq '*') { $null = $sb.Append('[^/]*'); $position++ }
+        elseif ($rest[0] -eq '?') { $null = $sb.Append('[^/]'); $position++ }
+        else { $null = $sb.Append([regex]::Escape([string] $rest[0])); $position++ }
     }
     return [regex]::new($sb.Append('$').ToString())
 }
@@ -102,7 +102,7 @@ $log = @(& git log --no-merges --format=%H%x09%s "$Base..HEAD")
 if ($LASTEXITCODE -ne 0) { throw "git log $Base..HEAD failed ($LASTEXITCODE)" }
 
 $typeRegex = '^([A-Za-z]+)(\([^)]*\))?(!)?: '
-$ships = $false
+$hasShippableChanges = $false
 Write-Host "Commits since ${Base}:"
 foreach ($line in $log | Where-Object { $_ }) {
     $sha, $subject = $line -split "`t", 2
@@ -110,7 +110,7 @@ foreach ($line in $log | Where-Object { $_ }) {
 
     $files = @(& git diff-tree --root --no-commit-id --name-only -r "$sha")
     if ($LASTEXITCODE -ne 0) { throw "git diff-tree $sha failed ($LASTEXITCODE)" }
-    $functional = @($files | Where-Object { $f = $_; -not ($ignore | Where-Object { $_.IsMatch($f) }) })
+    $functional = @($files | Where-Object { $file = $_; -not ($ignore | Where-Object { $_.IsMatch($file) }) })
 
     $reason = $null
     if ($subject -match $typeRegex) {
@@ -122,10 +122,10 @@ foreach ($line in $log | Where-Object { $_ }) {
         Write-Host "  skip   $short $subject ($reason)"
     } else {
         Write-Host "  ships  $short $subject ($($functional.Count) functional file(s), e.g. $($functional[0]))"
-        $ships = $true
+        $hasShippableChanges = $true
     }
 }
 
-if (-not $ships) { Write-Host "No functional changes since $Base." }
-Complete-Gate -HasChanges $ships -BaseRef $Base -OutputPath $OutputPath
+if (-not $hasShippableChanges) { Write-Host "No functional changes since $Base." }
+Complete-Gate -HasChanges $hasShippableChanges -BaseRef $Base -OutputPath $OutputPath
 exit 0

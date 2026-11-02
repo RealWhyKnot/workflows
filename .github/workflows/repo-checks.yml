@@ -12,7 +12,7 @@ on:
         description: Newline-separated Dependabot ecosystems this repo deliberately leaves out.
         type: string
         required: false
-        default: ''
+        default: ""
       actionlint:
         description: Lint the workflows with actionlint and shellcheck.
         type: boolean

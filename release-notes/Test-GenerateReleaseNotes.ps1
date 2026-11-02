@@ -98,9 +98,9 @@ function Expand-ActionExpression {
     param([string] $Text, [hashtable] $With, [string] $Temp)
     $result = [System.Text.StringBuilder]::new()
     $last = 0
-    foreach ($m in [regex]::Matches($Text, '\$\{\{\s*([^}]+?)\s*\}\}')) {
-        $null = $result.Append($Text, $last, $m.Index - $last)
-        $key = $m.Groups[1].Value
+    foreach ($match in [regex]::Matches($Text, '\$\{\{\s*([^}]+?)\s*\}\}')) {
+        $null = $result.Append($Text, $last, $match.Index - $last)
+        $key = $match.Groups[1].Value
         $value = if ($key -match '^inputs\.(.+)$') {
             "$($With[$Matches[1]])"
         } elseif ($key -eq 'github.action_path') {
@@ -111,7 +111,7 @@ function Expand-ActionExpression {
             ''
         }
         $null = $result.Append($value)
-        $last = $m.Index + $m.Length
+        $last = $match.Index + $match.Length
     }
     $null = $result.Append($Text, $last, $Text.Length - $last)
     return $result.ToString()
@@ -125,21 +125,25 @@ function Invoke-ReleaseNotesAction {
     $runAt = [array]::IndexOf($yaml, '      run: |')
     $envAt = [array]::IndexOf($yaml, '      env:')
     $stepEnv = @{ GITHUB_OUTPUT = (Join-Path $Temp 'github-output') }
-    for ($i = $envAt + 1; $i -lt $runAt -and $yaml[$i] -match '^        ([A-Z_]+): (.*)$'; $i++) {
+    for ($lineIndex = $envAt + 1
+        $lineIndex -lt $runAt -and $yaml[$lineIndex] -match '^        ([A-Z_]+): (.*)$'
+        $lineIndex++) {
         $stepEnv[$Matches[1]] = Expand-ActionExpression -Text $Matches[2] -With $With -Temp $Temp
     }
     $script = New-Object System.Collections.Generic.List[string]
     $script.Add('$ErrorActionPreference = ''stop''')
-    for ($i = $runAt + 1; $i -lt $yaml.Count -and ($yaml[$i] -eq '' -or $yaml[$i].StartsWith('        ')); $i++) {
-        $script.Add((Expand-ActionExpression -Text ($yaml[$i] -replace '^ {8}', '') -With $With -Temp $Temp))
+    for ($lineIndex = $runAt + 1
+        $lineIndex -lt $yaml.Count -and ($yaml[$lineIndex] -eq '' -or $yaml[$lineIndex].StartsWith('        '))
+        $lineIndex++) {
+        $script.Add((Expand-ActionExpression -Text ($yaml[$lineIndex] -replace '^ {8}', '') -With $With -Temp $Temp))
     }
     $script.Add('if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }')
     $scriptPath = Join-Path $Temp 'step.ps1'
     [System.IO.File]::WriteAllText($scriptPath, ($script -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
     $saved = @{}
-    foreach ($k in $stepEnv.Keys) {
-        $saved[$k] = [Environment]::GetEnvironmentVariable($k)
-        [Environment]::SetEnvironmentVariable($k, $stepEnv[$k])
+    foreach ($key in $stepEnv.Keys) {
+        $saved[$key] = [Environment]::GetEnvironmentVariable($key)
+        [Environment]::SetEnvironmentVariable($key, $stepEnv[$key])
     }
     try {
         $stepOutput = @(& (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command ". '$scriptPath'" *>&1)
@@ -147,7 +151,7 @@ function Invoke-ReleaseNotesAction {
         [System.IO.File]::WriteAllText((Join-Path $Temp 'step.log'), ($stepOutput -join [Environment]::NewLine))
         return $stepCode
     } finally {
-        foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
+        foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
     }
 }
 

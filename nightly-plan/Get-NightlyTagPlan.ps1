@@ -18,11 +18,11 @@ function Set-Output {
     [CmdletBinding()]
     [OutputType([void])]
     param([hashtable] $Values, [string] $OutputPath)
-    foreach ($k in $Values.Keys) {
-        Write-Host "$k=$($Values[$k])"
+    foreach ($key in $Values.Keys) {
+        Write-Host "$key=$($Values[$key])"
         if ($OutputPath) {
             $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
-            [System.IO.File]::AppendAllText($path, "$k=$($Values[$k])" + [Environment]::NewLine)
+            [System.IO.File]::AppendAllText($path, "$key=$($Values[$key])" + [Environment]::NewLine)
         }
     }
 }

@@ -49,9 +49,9 @@ $thirdParty = New-Object System.Collections.Generic.List[object]
 foreach ($file in $yamlFiles) {
     $relative = [System.IO.Path]::GetRelativePath($Root, $file.FullName) -replace '\\', '/'
     $text = Get-Text -Path $file.FullName
-    foreach ($m in $usesPattern.Matches($text)) {
-        $target = $m.Groups[1].Value
-        $ref = $m.Groups[2].Value
+    foreach ($match in $usesPattern.Matches($text)) {
+        $target = $match.Groups[1].Value
+        $ref = $match.Groups[2].Value
         if ($target -match $sharedPattern) {
             $sharedCalls.Add([pscustomobject]@{ File = $relative; Target = $target; Ref = $ref; Text = $text })
             if ($ref -ne $SharedRef) {
@@ -113,7 +113,7 @@ if (-not $dependabotPath) {
     $entries = New-Object System.Collections.Generic.List[object]
     $current = $null
     $entryIndent = -1
-    $inCommitMessage = $false
+    $isInCommitMessage = $false
     foreach ($line in ((Get-Text -Path (Join-Path $Root $dependabotPath)) -split "`n")) {
         $indent = $line.Length - $line.TrimStart(' ').Length
         $trimmed = $line.Trim()
@@ -121,15 +121,15 @@ if (-not $dependabotPath) {
             $current = [pscustomobject]@{ Ecosystem = $Matches[1]; Prefix = $false }
             $entries.Add($current)
             $entryIndent = $indent
-            $inCommitMessage = $false
+            $isInCommitMessage = $false
             continue
         }
         if (-not $current -or $trimmed.Length -eq 0 -or $trimmed.StartsWith('#')) { continue }
         if ($indent -le $entryIndent) { $current = $null; continue }
-        if ($trimmed -match '^commit-message:\s*$') { $inCommitMessage = $true; continue }
-        if ($inCommitMessage -and $trimmed -match '^prefix:\s*\S') { $current.Prefix = $true; continue }
+        if ($trimmed -match '^commit-message:\s*$') { $isInCommitMessage = $true; continue }
+        if ($isInCommitMessage -and $trimmed -match '^prefix:\s*\S') { $current.Prefix = $true; continue }
         if ($trimmed -match '^[A-Za-z0-9_-]+:' -and $trimmed -notmatch '^(prefix|prefix-development|include):') {
-            $inCommitMessage = $false
+            $isInCommitMessage = $false
         }
     }
     $covered = @(@(foreach ($entry in $entries) { $entry.Ecosystem }) | Select-Object -Unique)
@@ -210,9 +210,9 @@ if ($Pins -ne 'off') {
     }
 }
 
-foreach ($w in $warnings) { Write-Host "::warning::$w" }
+foreach ($warning in $warnings) { Write-Host "::warning::$warning" }
 if ($errors.Count -gt 0) {
-    foreach ($e in $errors) { Write-Host "::error::$e" }
+    foreach ($finding in $errors) { Write-Host "::error::$finding" }
     Write-Host "Found $($errors.Count) problem(s) that make this repo drift from the shared setup."
     exit 1
 }

@@ -42,10 +42,10 @@ function Assert-Result {
         Repository  = ''
         LatestMajor = $script:latest
     }
-    foreach ($k in $Extra.Keys) { $params[$k] = $Extra[$k] }
+    foreach ($key in $Extra.Keys) { $params[$key] = $Extra[$key] }
     $out = (& $script:checker @params *>&1) -join "`n"
-    $passed = $LASTEXITCODE -eq 0
-    if ($passed -ne $ShouldPass) {
+    $hasPassed = $LASTEXITCODE -eq 0
+    if ($hasPassed -ne $ShouldPass) {
         Write-Host "FAIL  ${Name}: expected $(if ($ShouldPass) { 'pass' } else { 'failure' }), got exit $LASTEXITCODE"
         Write-Host "        $out"
         $script:failures++

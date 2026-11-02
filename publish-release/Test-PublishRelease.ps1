@@ -10,9 +10,9 @@ function Get-Plan {
     [CmdletBinding()]
     [OutputType([string])]
     param([hashtable] $Params)
-    $p = @{} + $Params
-    $p['DryRun'] = $true
-    $lines = foreach ($item in & $script:publisher @p *>&1) { "$item" }
+    $parameters = @{} + $Params
+    $parameters['DryRun'] = $true
+    $lines = foreach ($item in & $script:publisher @parameters *>&1) { "$item" }
     return $lines -join "`n"
 }
 
@@ -21,14 +21,17 @@ function Assert-Plan {
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [string[]] $Contains = @(), [string[]] $NotContains = @())
     $plan = Get-Plan -Params $Params
-    foreach ($c in $Contains) {
-        if ($plan -notmatch [regex]::Escape($c)) {
-            Write-Host "FAIL  $Name -- missing '$c'"; Write-Host "        $plan"; $script:failures++; return
+    foreach ($expected in $Contains) {
+        if ($plan -notmatch [regex]::Escape($expected)) {
+            Write-Host "FAIL  $Name -- missing '$expected'"; Write-Host "        $plan"; $script:failures++; return
         }
     }
-    foreach ($n in $NotContains) {
-        if ($plan -match [regex]::Escape($n)) {
-            Write-Host "FAIL  $Name -- should not contain '$n'"; Write-Host "        $plan"; $script:failures++; return
+    foreach ($forbidden in $NotContains) {
+        if ($plan -match [regex]::Escape($forbidden)) {
+            Write-Host "FAIL  $Name -- should not contain '$forbidden'"
+            Write-Host "        $plan"
+            $script:failures++
+            return
         }
     }
     Write-Host "ok    $Name"
@@ -41,7 +44,7 @@ function gh {
     $ghCallLog.Add($Rest -join ' ')
     $global:LASTEXITCODE = 0
     if ($Rest -contains 'id,isDraft') {
-        if ($ghReleaseIsDraft) { return '{"id":"RE_1","isDraft":true}' }
+        if ($isReleaseDraft) { return '{"id":"RE_1","isDraft":true}' }
         return '{"id":"RE_1","isDraft":false}'
     }
     if ($Rest -contains 'assets,isDraft') { return '{"assets":[{"name":"a.zip"}],"isDraft":true}' }
@@ -51,7 +54,7 @@ function gh {
 $script:publisher = Join-Path $PSScriptRoot 'Publish-Release.ps1'
 $script:failures = 0
 $ghCallLog = [System.Collections.Generic.List[string]]::new()
-$ghReleaseIsDraft = $false
+$isReleaseDraft = $false
 
 $base = @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
 
@@ -139,7 +142,7 @@ Assert-Plan -Name 'an existing published release is not promoted again' -Params 
     }) -Contains @('gh release edit v2026.9.8.0 --title') -NotContains @('--draft=false', 'gh release create')
 
 $ghCallLog.Clear()
-$ghReleaseIsDraft = $true
+$isReleaseDraft = $true
 & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Assets @('a.zip') -DraftFirst $true *> $null
 $rerun = $ghCallLog -join "`n"
 if ($rerun -match [regex]::Escape('release edit v2026.9.8.0 --draft=false') -and $rerun -notmatch 'release create') {
@@ -161,7 +164,7 @@ Assert-Plan -Name 'delete-existing deletes in the target repository' -Params ($b
     }) -Contains @('gh release delete v2026.9.8.0 --yes --repo o/r', 'gh release create v2026.9.8.0 --repo o/r')
 
 $ghCallLog.Clear()
-$ghReleaseIsDraft = $false
+$isReleaseDraft = $false
 & $script:publisher -Tag 'v2026.9.8.0' -NotesFile 'notes.md' -Repository 'o/r' -DeleteExisting $true *> $null
 $deleteCall = @(foreach ($call in $ghCallLog) { if ($call -match '^release delete') { $call } })
 if ($deleteCall.Count -eq 1 -and $deleteCall[0] -eq 'release delete v2026.9.8.0 --yes --repo o/r') {

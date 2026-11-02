@@ -8,19 +8,19 @@ inputs:
   repository:
     description: owner/name to read commits from. Defaults to the calling repository.
     required: false
-    default: ''
+    default: ""
   previous-tag:
     description: Override the tag to diff against. Resolved automatically when empty.
     required: false
-    default: ''
+    default: ""
   title:
     description: Optional H1 placed above the changes.
     required: false
-    default: ''
+    default: ""
   extra:
     description: Extra markdown appended after the changelog, for downloads and hashes.
     required: false
-    default: ''
+    default: ""
 
 outputs:
   file:

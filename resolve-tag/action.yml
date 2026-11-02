@@ -5,7 +5,7 @@ inputs:
   tag:
     description: Tag to release. Falls back to the ref that triggered the run when empty.
     required: false
-    default: ''
+    default: ""
   tag-pattern:
     description: Regex every valid tag must match.
     required: false
@@ -17,7 +17,7 @@ inputs:
   require-tag-exists:
     description: Fail unless the tag resolves to a commit in the checkout.
     required: false
-    default: 'true'
+    default: "true"
 
 outputs:
   tag:

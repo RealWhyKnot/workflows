@@ -9,395 +9,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Read-VendoredEntry {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Path
-    )
-    $segment = '(?!\.+/)[A-Za-z0-9_.@+-]+/'
-    $number = 0
-    foreach ($line in [IO.File]::ReadAllLines($Path)) {
-        $number++
-        $entry = $line.Trim()
-        if (-not $entry) {
-            continue
-        }
-        if ($entry -cnotmatch "^(?:/(?:$segment)+|$segment)$") {
-            throw "$(Split-Path -Leaf $Path):${number}: '$entry' isn't a folder name/ or a /path/ from the repo root"
-        }
-        $entry
-    }
-}
-
-function Get-VendoredPattern {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [string[]] $Entry = @()
-    )
-    $parts = @(foreach ($item in $Entry) {
-            $name = [regex]::Escape($item.Trim('/'))
-            if ($entry.StartsWith('/')) {
-                "^$name/"
-            } else {
-                "(^|/)$name/"
-            }
-        })
-    if ($parts.Count -eq 0) {
-        return '(?!)'
-    }
-    '(' + ($parts -join '|') + ')'
-}
-
-function Add-ListItem {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Text,
-        [Parameter(Mandatory)][string] $Anchor,
-        [Parameter(Mandatory)][string[]] $Item,
-        [string] $Quote = ''
-    )
-    $quoted = [regex]::Escape($Quote + $Anchor + $Quote)
-    $found = [regex]::Match($Text, "(?m)^(?<indent>[ \t]*)$quoted(?<comma>,?)$")
-    if (-not $found.Success) {
-        throw "The baseline has no $Anchor entry to add the repo's vendored paths after."
-    }
-    $comma = if ($Quote) { ',' } else { '' }
-    $lines = @(foreach ($value in @($Anchor; $Item)) {
-            "$($found.Groups['indent'].Value)$Quote$value$Quote$comma"
-        })
-    if ($Quote -and -not $found.Groups['comma'].Value) {
-        $lines[-1] = $lines[-1].TrimEnd(',')
-    }
-    $Text.Substring(0, $found.Index) + ($lines -join "`n") + $Text.Substring($found.Index + $found.Length)
-}
-
-function Add-SectionItem {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Text,
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Prefix,
-        [Parameter(Mandatory)][string[]] $Item
-    )
-    $found = [regex]::Match($Text, "(?m)^\[$([regex]::Escape($Prefix))\{(?<list>[^}\n]*\.yarn)\}/\*\*\]$")
-    if (-not $found.Success) {
-        throw "The baseline has no [$Prefix{...,.yarn}/**] section to add the repo's vendored paths to."
-    }
-    $header = "[$Prefix{$($found.Groups['list'].Value),$($Item -join ',')}/**]"
-    $Text.Substring(0, $found.Index) + $header + $Text.Substring($found.Index + $found.Length)
-}
-
-function Add-VendoredEntry {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Key,
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Text,
-        [string[]] $Entry = @()
-    )
-    if ($Entry.Count -eq 0) {
-        return $Text
-    }
-    $names = @(foreach ($item in $Entry) { if (-not $item.StartsWith('/')) { $item.TrimEnd('/') } })
-    $paths = @(foreach ($item in $Entry) { if ($item.StartsWith('/')) { $item.Trim('/') } })
-    switch -CaseSensitive ($Key) {
-        '.github/lint/vendored-paths.txt' {
-            return $Text.TrimEnd("`n") + "`n" + ($Entry -join "`n") + "`n"
-        }
-        'ruff.toml' {
-            $item = @($names; foreach ($path in $paths) { "./$path" })
-            return Add-ListItem -Text $Text -Anchor '.yarn' -Quote '"' -Item $item
-        }
-        'pyrightconfig.json' {
-            $item = @(foreach ($name in $names) { "**/$name" }; $paths)
-            return Add-ListItem -Text $Text -Anchor '**/.yarn' -Quote '"' -Item $item
-        }
-        '.prettierignore' {
-            $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "/$path/" })
-            return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Item $item
-        }
-        'eslint.config.mjs' {
-            $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "$path/" })
-            return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Quote '"' -Item $item
-        }
-        'stylelint.config.mjs' {
-            $item = @(foreach ($name in $names) { "**/$name/**" }; foreach ($path in $paths) { "$path/**" })
-            return Add-ListItem -Text $Text -Anchor '**/.yarn/**' -Quote '"' -Item $item
-        }
-        '.editorconfig' {
-            $Text = Add-SectionItem -Text $Text -Prefix '' -Item @($names; $paths)
-            if ($names.Count -gt 0) {
-                $Text = Add-SectionItem -Text $Text -Prefix '**/' -Item $names
-            }
-            return $Text
-        }
-    }
-    $Text
-}
-
-function Get-FileLanguage {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Root,
-        [Parameter(Mandatory)][string] $File,
-        [Parameter(Mandatory)][hashtable] $LanguageOf
-    )
-    if ($File -match '\.(sh|bash)\.tpl$') {
-        return 'shell'
-    }
-    $extension = [IO.Path]::GetExtension($File)
-    if ($extension) {
-        if ($LanguageOf.ContainsKey($extension)) {
-            return $LanguageOf[$extension]
-        }
-        return ''
-    }
-    $path = Join-Path $Root $File
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        return ''
-    }
-    $buffer = New-Object byte[] 128
-    $stream = [IO.File]::OpenRead($path)
-    try {
-        $count = $stream.Read($buffer, 0, $buffer.Length)
-    } finally {
-        $stream.Dispose()
-    }
-    $first = ([Text.Encoding]::ASCII.GetString($buffer, 0, $count) -split "`n")[0]
-    $interpreter = '^#![ \t]*\S*/(env[ \t]+(-\S+[ \t]+)*)?'
-    if ($first -match ($interpreter + '(ba|da|k|z)?sh\b')) {
-        return 'shell'
-    }
-    if ($first -match ($interpreter + 'python[0-9.]*\b')) {
-        return 'python'
-    }
-    return ''
-}
-
-function Test-Rule {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)][hashtable] $Rule,
-        [Parameter(Mandatory)][string] $Root,
-        [Parameter(Mandatory)][AllowEmptyCollection()][string[]] $Tracked
-    )
-    if ($Rule.ContainsKey('Tracked')) {
-        $hits = @($Tracked | Where-Object { $_ -ne $Rule.File -and $_ -match $Rule.Tracked })
-        if (-not $Rule.ContainsKey('Matches')) {
-            return $hits.Count -gt 0
-        }
-        foreach ($hit in $hits) {
-            $file = Join-Path $Root $hit
-            if ((Test-Path -LiteralPath $file -PathType Leaf) -and [IO.File]::ReadAllText($file) -match $Rule.Matches) {
-                return $true
-            }
-        }
-        return $false
-    }
-    $path = Join-Path $Root $Rule.When
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        return $false
-    }
-    if (-not $Rule.ContainsKey('Matches')) {
-        return $true
-    }
-    return [IO.File]::ReadAllText($path) -match $Rule.Matches
-}
-
-function Get-RuleReason {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][hashtable] $Rule
-    )
-    if ($Rule.ContainsKey('Reason')) {
-        return $Rule.Reason
-    }
-    if ($Rule.ContainsKey('Tracked')) {
-        return "a tracked file matches $($Rule.Tracked)"
-    }
-    if ($Rule.ContainsKey('Matches')) {
-        return "$($Rule.When) matches $($Rule.Matches)"
-    }
-    return "$($Rule.When) exists"
-}
-
-function Split-Section {
-    [CmdletBinding()]
-    [OutputType([System.Collections.Specialized.OrderedDictionary])]
-    param(
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Text
-    )
-    $sections = [ordered]@{ '' = [System.Collections.Generic.List[string]]::new() }
-    $current = $sections['']
-    foreach ($raw in $Text -split "`r?`n") {
-        $line = $raw.Trim()
-        if (-not $line -or $line.StartsWith('#') -or $line.StartsWith(';')) {
-            continue
-        }
-        if ($line -match '^\[.*\]$') {
-            if (-not $sections.Contains($line)) {
-                $sections[$line] = [System.Collections.Generic.List[string]]::new()
-            }
-            $current = $sections[$line]
-            continue
-        }
-        $current.Add($line)
-    }
-    $sections
-}
-
-function ConvertTo-Setting {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string] $Line
-    )
-    ($Line -replace '\s*=\s*', '=') -replace '\s+', ' '
-}
-
-function Get-MissingLine {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Expected,
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Actual
-    )
-    $have = Split-Section -Text $Actual
-    $want = Split-Section -Text $Expected
-    foreach ($name in $want.Keys) {
-        $present = @()
-        if ($have.Contains($name)) {
-            $present = @(foreach ($line in $have[$name]) { ConvertTo-Setting -Line $line })
-        }
-        foreach ($line in $want[$name]) {
-            if ((ConvertTo-Setting -Line $line) -notin $present) {
-                ($name + ' ' + $line).Trim()
-            }
-        }
-    }
-}
-
-function Get-MissingJson {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [AllowNull()][object] $Expected,
-        [AllowNull()][object] $Actual,
-        [string] $Prefix = ''
-    )
-    $record = [System.Management.Automation.PSCustomObject]
-    if ($Expected -isnot $record) {
-        if ("$Expected" -cne "$Actual") {
-            $Prefix
-        }
-        return
-    }
-    foreach ($property in $Expected.PSObject.Properties) {
-        $value = $null
-        if ($Actual -is $record -and $Actual.PSObject.Properties[$property.Name]) {
-            $value = $Actual.PSObject.Properties[$property.Name].Value
-        }
-        $path = $property.Name
-        if ($Prefix) {
-            $path = "$Prefix.$path"
-        }
-        Get-MissingJson -Expected $property.Value -Actual $value -Prefix $path
-    }
-}
-
-function Join-Section {
-    [CmdletBinding()]
-    [OutputType([hashtable])]
-    param(
-        [Parameter(Mandatory)][string[]] $Text
-    )
-    $combined = [ordered]@{}
-    $conflicts = [System.Collections.Generic.List[string]]::new()
-    foreach ($part in $Text) {
-        $sections = Split-Section -Text $part
-        foreach ($name in $sections.Keys) {
-            if (-not $combined.Contains($name)) {
-                $combined[$name] = [System.Collections.Generic.List[string]]::new()
-            }
-            $lines = $combined[$name]
-            foreach ($line in $sections[$name]) {
-                $key = ($line -split '=', 2)[0].Trim()
-                $same = @($lines | Where-Object { ($_ -split '=', 2)[0].Trim() -eq $key })
-                if ($same.Count -eq 0) {
-                    $lines.Add($line)
-                } elseif ((ConvertTo-Setting -Line $same[0]) -ne (ConvertTo-Setting -Line $line)) {
-                    $conflicts.Add(("$name $key").Trim())
-                }
-            }
-        }
-    }
-    $builder = [System.Text.StringBuilder]::new()
-    foreach ($name in $combined.Keys) {
-        if ($combined[$name].Count -eq 0) {
-            continue
-        }
-        if ($builder.Length -gt 0) {
-            $null = $builder.Append("`n")
-        }
-        if ($name) {
-            $null = $builder.Append("$name`n")
-        }
-        foreach ($line in $combined[$name]) {
-            $null = $builder.Append("$line`n")
-        }
-    }
-    @{ Text = $builder.ToString(); Conflicts = $conflicts.ToArray() }
-}
-
-function Test-MergeItem {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)][string] $Name,
-        [Parameter(Mandatory)][string] $Source,
-        [Parameter(Mandatory)][string] $Root,
-        [AllowNull()][hashtable] $Entry
-    )
-    $leaf = Split-Path -Leaf $Source
-    if ($Entry -and $Entry.ContainsKey('Skip') -and $Entry.Skip) {
-        Write-Host "${Name}: merge/$leaf isn't merged into a file here: $(Get-RuleReason -Rule $Entry)"
-        return $false
-    }
-    $target = $leaf
-    if ($Entry -and $Entry.ContainsKey('Into')) {
-        $target = $Entry.Into
-    }
-    $path = Join-Path $Root $target
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        if ($Entry) {
-            Write-Host "${Name}: $target is missing. Create it with the lines in merge/$leaf."
-            return $true
-        }
-        Write-Host "${Name}: no $target here to check merge/$leaf against. The $Name guide says where it goes."
-        return $false
-    }
-    $expected = [IO.File]::ReadAllText($Source)
-    $actual = [IO.File]::ReadAllText($path)
-    if ($leaf.EndsWith('.json')) {
-        $wanted = ConvertFrom-Json -InputObject $expected
-        $found = ConvertFrom-Json -InputObject $actual
-        $missing = @(Get-MissingJson -Expected $wanted -Actual $found)
-    } else {
-        $missing = @(Get-MissingLine -Expected $expected -Actual $actual)
-    }
-    if ($missing.Count -eq 0) {
-        Write-Host "${Name}: $target has everything in merge/$leaf"
-        return $false
-    }
-    Write-Host "${Name}: $target is missing $($missing.Count) settings from merge/${leaf}: $($missing -join '; ')"
-    return $true
-}
+Import-Module -Name (Join-Path $PSScriptRoot 'VendoredPaths.psm1')
+Import-Module -Name (Join-Path $PSScriptRoot 'InstallRules.psm1')
+Import-Module -Name (Join-Path $PSScriptRoot 'MergeSettings.psm1')
 
 $extensions = @{
     rust       = @('.rs')
@@ -499,7 +113,7 @@ if ($Lang) {
     }
 }
 
-$pending = $false
+$hasPendingChanges = $false
 $plan = [ordered]@{}
 foreach ($name in @('common'; $selected)) {
     $source = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot $name)).Path
@@ -539,7 +153,7 @@ foreach ($name in @('common'; $selected)) {
                     $check.Entry = $entry[0]
                 }
                 if (Test-MergeItem @check) {
-                    $pending = $true
+                    $hasPendingChanges = $true
                 }
             }
             continue
@@ -560,7 +174,7 @@ foreach ($name in @('common'; $selected)) {
             } else {
                 $where = 'vendored paths go in .github/lint/vendored-paths.local.txt'
                 Write-Host "${name}: $reason. Remove it: $key replaces it, and $where."
-                $pending = $true
+                $hasPendingChanges = $true
             }
         }
         if (-not $plan.Contains($key)) {
@@ -580,7 +194,7 @@ foreach ($key in $plan.Keys) {
         if (Test-Path -LiteralPath (Join-Path $root $copy) -PathType Leaf) {
             $owner = $plan[$key][0].Language
             Write-Host "${owner}: $copy moved to $key. Delete $copy and point hooks and CI at $key."
-            $pending = $true
+            $hasPendingChanges = $true
         }
     }
 }
@@ -597,33 +211,33 @@ foreach ($key in $plan.Keys) {
         $text = $joined.Text
         foreach ($conflict in $joined.Conflicts) {
             Write-Host "${names}: the baselines set $conflict in $key differently. Make them agree first."
-            $pending = $true
+            $hasPendingChanges = $true
         }
     } else {
         Write-Host "${names}: each baseline has its own $key. Merge them by hand."
-        $pending = $true
+        $hasPendingChanges = $true
         continue
     }
     $text = Add-VendoredEntry -Key $key -Text $text -Entry $local
-    $dest = Join-Path $root $key
-    if (Test-Path -LiteralPath $dest -PathType Leaf) {
-        $current = [IO.File]::ReadAllText($dest) -replace "`r`n", "`n"
+    $destination = Join-Path $root $key
+    if (Test-Path -LiteralPath $destination -PathType Leaf) {
+        $current = [IO.File]::ReadAllText($destination) -replace "`r`n", "`n"
         if ($current -ceq $text) {
             Write-Host "${names}: $key is already current"
             continue
         }
         if (-not $Force) {
             Write-Host "${names}: $key differs from the baseline. Fix it by hand, or run again with -Force."
-            $pending = $true
+            $hasPendingChanges = $true
             continue
         }
     }
-    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $dest))
-    [IO.File]::WriteAllText($dest, $text, $utf8)
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+    [IO.File]::WriteAllText($destination, $text, $utf8)
     Write-Host "${names}: installed $key"
 }
 
-if ($pending) {
+if ($hasPendingChanges) {
     Write-Host 'The repo isn''t on the baseline yet. Do the steps above, then run this again.'
     exit 1
 }

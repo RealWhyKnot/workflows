@@ -5,11 +5,11 @@ inputs:
   range:
     description: Explicit git range. Resolved from the triggering event when empty.
     required: false
-    default: ''
+    default: ""
   check-stamp:
     description: Reject subjects carrying more than one CalVer build stamp.
     required: false
-    default: 'true'
+    default: "true"
   stamp-pattern:
     description: Regex matching one build stamp. Counted per subject.
     required: false
@@ -17,7 +17,7 @@ inputs:
   check-conventional:
     description: Require every non-merge subject to be a conventional commit.
     required: false
-    default: 'false'
+    default: "false"
   conventional-pattern:
     description: Regex a conventional subject must match.
     required: false
@@ -25,7 +25,7 @@ inputs:
   forbidden-body-pattern:
     description: Regex rejected anywhere in a non-merge commit body. Empty skips the check.
     required: false
-    default: ''
+    default: ""
 
 runs:
   using: composite

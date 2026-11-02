@@ -35,27 +35,27 @@ function Invoke-Install {
         Install    = $install
         PathFile   = $pathFile
     }
-    $ok = $true
+    $isSuccess = $true
     $text = ''
     try { $text = (& $script:installer @installArgs *>&1) -join "`n" }
-    catch [System.Management.Automation.RuntimeException] { $ok = $false; $text = "$_" }
+    catch [System.Management.Automation.RuntimeException] { $isSuccess = $false; $text = "$_" }
     $path = if (Test-Path $pathFile) { [System.IO.File]::ReadAllText($pathFile).Trim() } else { '' }
     Remove-Item $pathFile -ErrorAction SilentlyContinue
-    return @{ Ok = $ok; Text = $text; Installed = $state.Installed; Path = $path }
+    return @{ IsSuccess = $isSuccess; Text = $text; Installed = $state.Installed; Path = $path }
 }
 
 function Assert-Install {
     [CmdletBinding()]
     [OutputType([void])]
-    param([string] $Name, [hashtable] $Result, [bool] $Ok, [string[]] $Installed, [string] $Contains = '')
+    param([string] $Name, [hashtable] $Result, [bool] $IsSuccess, [string[]] $Installed, [string] $Contains = '')
     $problem = $null
-    if ($Result.Ok -ne $Ok) {
-        $problem = "ok was $($Result.Ok)"
+    if ($Result.IsSuccess -ne $isSuccess) {
+        $problem = "ok was $($Result.IsSuccess)"
     } elseif (($Result.Installed -join ',') -ne ($Installed -join ',')) {
         $problem = "installed '$($Result.Installed -join ',')'"
     } elseif ($Contains -and $Result.Text -notmatch [regex]::Escape($Contains)) {
         $problem = "missing '$Contains'"
-    } elseif ($Ok -and $Result.Path -ne 'C:\NSIS') {
+    } elseif ($isSuccess -and $Result.Path -ne 'C:\NSIS') {
         $problem = "PATH got '$($Result.Path)'"
     }
     if ($problem) {
@@ -70,21 +70,25 @@ function Assert-Install {
 $script:installer = Join-Path $PSScriptRoot 'Install-Nsis.ps1'
 $script:failures = 0
 
-$r = Invoke-Install -Versions @('v3.12')
-Assert-Install -Name 'the right version skips the install' -Result $r -Ok $true -Installed @() -Contains (
+$result = Invoke-Install -Versions @('v3.12')
+Assert-Install -Name 'the right version skips the install' -Result $result -IsSuccess $true -Installed @() -Contains (
     'already installed')
-$r = Invoke-Install -Versions @('v3.10', 'v3.12')
-Assert-Install -Name 'an older version is replaced' -Result $r -Ok $true -Installed @('3.12.0') -Contains 'Found v3.10'
-$r = Invoke-Install -Versions @('', 'v3.12')
-Assert-Install -Name 'a missing install is installed' -Result $r -Ok $true -Installed @('3.12.0') -Contains (
+$result = Invoke-Install -Versions @('v3.10', 'v3.12')
+Assert-Install -Name 'an older version is replaced' -Result $result -IsSuccess $true -Installed @('3.12.0') -Contains (
+    'Found v3.10')
+$result = Invoke-Install -Versions @('', 'v3.12')
+Assert-Install -Name 'a missing install is installed' -Result $result -IsSuccess $true -Installed (
+    @('3.12.0')) -Contains (
     'Found nothing')
-$r = Invoke-Install -Versions @('', '') -InstallFails $true
-Assert-Install -Name 'a failed install fails' -Result $r -Ok $false -Installed @('3.12.0') -Contains 'choco broke'
-$r = Invoke-Install -Versions @('', 'v3.11')
-Assert-Install -Name 'the wrong version after installing fails' -Result $r -Ok $false -Installed @('3.12.0') -Contains (
+$result = Invoke-Install -Versions @('', '') -InstallFails $true
+Assert-Install -Name 'a failed install fails' -Result $result -IsSuccess $false -Installed @('3.12.0') -Contains (
+    'choco broke')
+$result = Invoke-Install -Versions @('', 'v3.11')
+Assert-Install -Name ('the wrong version after installing fails') -Result $result -IsSuccess $false -Installed (
+    @('3.12.0')) -Contains (
     "found 'v3.11'")
-$r = Invoke-Install -Versions @() -Version '3.12.0'
-Assert-Install -Name 'a malformed version is rejected' -Result $r -Ok $false -Installed @() -Contains (
+$result = Invoke-Install -Versions @() -Version '3.12.0'
+Assert-Install -Name 'a malformed version is rejected' -Result $result -IsSuccess $false -Installed @() -Contains (
     'must look like 3.12')
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

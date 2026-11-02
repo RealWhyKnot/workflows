@@ -1,12 +1,6 @@
 {
   "typeCheckingMode": "strict",
-  "exclude": [
-    "**/firmware",
-    "**/vendor",
-    "**/third_party",
-    "**/node_modules",
-    "**/.yarn"
-  ],
+  "exclude": ["**/firmware", "**/vendor", "**/third_party", "**/node_modules", "**/.yarn"],
   "enableTypeIgnoreComments": false,
   "deprecateTypingAliases": true,
   "reportMissingModuleSource": "error",

@@ -17,9 +17,9 @@ function Add-ParseError {
         [System.Management.Automation.Language.ParseError[]] $ParseErrors
     )
     if (-not $ParseErrors) { return }
-    foreach ($err in $ParseErrors) {
-        $where = "$($err.Extent.StartLineNumber):$($err.Extent.StartColumnNumber)"
-        $Problems.Add("$Source (line $where): $($err.Message)")
+    foreach ($parseError in $ParseErrors) {
+        $where = "$($parseError.Extent.StartLineNumber):$($parseError.Extent.StartColumnNumber)"
+        $Problems.Add("$Source (line $where): $($parseError.Message)")
     }
 }
 
@@ -48,10 +48,10 @@ function Add-RunBlockProblem {
     $null = [System.Management.Automation.Language.Parser]::ParseInput($stubbed, [ref]$null, [ref]$parseErrors)
     Add-ParseError -Problems $Problems -Source $Label -ParseErrors $parseErrors
 
-    $suppresses = $body -match '2>\$null'
-    $tolerates = $body -match '\$LASTEXITCODE\s+-eq\s+0'
-    $resets = $body -match '\$global:LASTEXITCODE\s*=\s*0'
-    if ($suppresses -and $tolerates -and -not $resets) {
+    $hasSuppression = $body -match '2>\$null'
+    $hasFailureCheck = $body -match '\$LASTEXITCODE\s+-eq\s+0'
+    $hasReset = $body -match '\$global:LASTEXITCODE\s*=\s*0'
+    if ($hasSuppression -and $hasFailureCheck -and -not $hasReset) {
         $Problems.Add("${Label}: lets a native command fail without setting `$global:LASTEXITCODE = 0, " +
             'so the step exits with the stale code.')
     }
@@ -89,17 +89,17 @@ if (Test-Path -LiteralPath $workflowDir) {
         $lines = [System.IO.File]::ReadAllLines($file.FullName)
         $stepName = '<unnamed>'
         $isPwsh = $false
-        $inRun = $false
+        $isInRun = $false
         $runIndent = -1
         $runStart = 0
         $blockLines = New-Object System.Collections.Generic.List[string]
 
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            $line = $lines[$i]
+        for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
+            $line = $lines[$lineIndex]
             $indent = $line.Length - $line.TrimStart(' ').Length
             $trimmed = $line.Trim()
 
-            if ($inRun) {
+            if ($isInRun) {
                 if ($trimmed.Length -gt 0 -and $indent -le $runIndent) {
                     $blockArgs = @{
                         Problems   = $errors
@@ -109,7 +109,7 @@ if (Test-Path -LiteralPath $workflowDir) {
                     }
                     Add-RunBlockProblem @blockArgs
                     $blockLines.Clear()
-                    $inRun = $false
+                    $isInRun = $false
                 } else {
                     $blockLines.Add($line)
                     continue
@@ -126,13 +126,13 @@ if (Test-Path -LiteralPath $workflowDir) {
                 continue
             }
             if ($isPwsh -and $trimmed -match '^run:\s*\|\s*$') {
-                $inRun = $true
+                $isInRun = $true
                 $runIndent = $indent
-                $runStart = $i + 1
+                $runStart = $lineIndex + 1
                 $blockLines.Clear()
             }
         }
-        if ($inRun) {
+        if ($isInRun) {
             $blockArgs = @{
                 Problems   = $errors
                 BlockLines = $blockLines
@@ -146,7 +146,7 @@ if (Test-Path -LiteralPath $workflowDir) {
 
 if ($errors.Count -gt 0) {
     Write-Host '::error::Workflow and PowerShell problems:'
-    foreach ($err in $errors) { Write-Host "  $err" }
+    foreach ($parseError in $errors) { Write-Host "  $parseError" }
     Write-Host "::error::Found $($errors.Count) problem(s)."
     exit 1
 }

@@ -19,8 +19,8 @@ function Assert-Result {
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [bool] $ShouldPass, [string] $ExpectedText = '')
     $out = (& $script:checker @Params *>&1) -join "`n"
-    $passed = $LASTEXITCODE -eq 0
-    if ($passed -ne $ShouldPass) {
+    $hasPassed = $LASTEXITCODE -eq 0
+    if ($hasPassed -ne $ShouldPass) {
         Write-Host "FAIL  $Name -- expected $(if ($ShouldPass) { 'pass' } else { 'failure' }), got exit $LASTEXITCODE"
         Write-Host "        $out"
         $script:failures++

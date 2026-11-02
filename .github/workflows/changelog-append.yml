@@ -7,7 +7,7 @@ on:
         description: Commit range to append. Worked out from the push when empty.
         type: string
         required: false
-        default: ''
+        default: ""
       changelog-paths:
         description: Newline-separated changelog files the script maintains.
         type: string
@@ -82,7 +82,7 @@ jobs:
         if: steps.append.outputs.changed == 'true'
         uses: RealWhyKnot/workflows/commit-on-branch@v1
         with:
-          headline: 'docs(changelog): append entries from ${{ github.sha }} [skip changelog]'
+          headline: "docs(changelog): append entries from ${{ github.sha }} [skip changelog]"
           body: Maintained by the shared changelog-append workflow.
           branch: ${{ github.ref_name }}
           paths: ${{ inputs.changelog-paths }}

@@ -22,6 +22,12 @@ internal static class CSharpStyle
     private static readonly string[] RootFiles = ["global.json", "Directory.Build.props", ".editorconfig", ".gitattributes"];
     private static readonly string[] UnityFolders = ["Core", "Runtime", "Editor", "Tests/Editor"];
 
+    static CSharpStyle()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, exception) => Console.Error.WriteLine(exception.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, exception) => Console.Error.WriteLine(exception.Exception);
+    }
+
     private static int Main(string[] args) => Run(Path.GetFullPath(args.Length > 0 ? args[0] : "."), args.Length > 1 ? args[1] : null);
 
     private static int Run(string root, string? vendoredList)
@@ -37,8 +43,8 @@ internal static class CSharpStyle
         (List<string> vendoredPrefixes, HashSet<string> vendoredNames) = ReadVendoredList(list);
 
         List<string> own = [.. tracked.Where(path => !IsVendored(path, vendoredPrefixes, vendoredNames))];
-        bool unity = own.Exists(path => path.EndsWith(".asmdef", StringComparison.Ordinal)) || File.Exists(Path.Combine(root, "ProjectSettings", "ProjectVersion.txt"));
-        List<string> packageRoots = unity ? FindPackageRoots(root, own) : [];
+        bool isUnity = own.Exists(path => path.EndsWith(".asmdef", StringComparison.Ordinal)) || File.Exists(Path.Combine(root, "ProjectSettings", "ProjectVersion.txt"));
+        List<string> packageRoots = isUnity ? FindPackageRoots(root, own) : [];
         List<string> findings = [];
         List<(string Path, SyntaxNode Root)> trees = [];
         foreach (string path in own.Where(path => path.EndsWith(".cs", StringComparison.Ordinal)))
@@ -54,22 +60,22 @@ internal static class CSharpStyle
         HashSet<string> caught = [.. trees.SelectMany(tree => tree.Root.DescendantNodes().OfType<CatchDeclarationSyntax>()).Select(declaration => LastName(declaration.Type))];
         foreach ((string path, SyntaxNode tree) in trees)
         {
-            bool tests = path.Split('/').Any(segment => segment.EndsWith(".Tests", StringComparison.Ordinal) || segment is "Tests");
-            bool core = path.Split('/').Any(segment => segment.EndsWith(".Core", StringComparison.Ordinal));
+            bool isTest = path.Split('/').Any(segment => segment.EndsWith(".Tests", StringComparison.Ordinal) || segment is "Tests");
+            bool isCore = path.Split('/').Any(segment => segment.EndsWith(".Core", StringComparison.Ordinal));
             CheckTypes(path, tree, caught, findings);
             CheckCatches(path, tree, findings);
             CheckStringLoops(path, tree, findings);
-            if (unity)
+            if (isUnity)
             {
                 CheckUnity(path, tree, findings);
             }
             else
             {
-                CheckDotNet(path, tree, tests, core, findings);
+                CheckDotNet(path, tree, isTest, isCore, findings);
             }
         }
 
-        if (unity)
+        if (isUnity)
         {
             CheckUnityLayout(root, own, packageRoots, findings);
         }
@@ -185,9 +191,9 @@ internal static class CSharpStyle
                 Add(findings, path, clause, "CS-7", "use the Try method instead of catching " + LastName(clause.Declaration?.Type));
             }
 
-            bool rethrowsConditionally = clause.Block.Statements.OfType<IfStatementSyntax>()
+            bool hasConditionalRethrow = clause.Block.Statements.OfType<IfStatementSyntax>()
                 .Any(branch => branch.Statement.DescendantNodesAndSelf().OfType<ThrowStatementSyntax>().Any(statement => statement.Expression is null));
-            if (rethrowsConditionally)
+            if (hasConditionalRethrow)
             {
                 Add(findings, path, clause, "CS-12", "use an exception filter (catch ... when) instead of a conditional throw;");
             }
@@ -203,7 +209,7 @@ internal static class CSharpStyle
     {
         foreach (AssignmentExpressionSyntax assignment in tree.DescendantNodes().OfType<AssignmentExpressionSyntax>())
         {
-            if (assignment.IsKind(SyntaxKind.AddAssignmentExpression) && IsStringExpression(assignment.Right) && InLoop(assignment))
+            if (assignment.IsKind(SyntaxKind.AddAssignmentExpression) && IsStringExpression(assignment.Right) && IsInLoop(assignment))
             {
                 Add(findings, path, assignment, "CS-18", "build strings in loops with StringBuilder");
             }
@@ -221,7 +227,7 @@ internal static class CSharpStyle
         };
     }
 
-    private static bool InLoop(SyntaxNode node)
+    private static bool IsInLoop(SyntaxNode node)
     {
         foreach (SyntaxNode ancestor in node.Ancestors())
         {
@@ -249,7 +255,7 @@ internal static class CSharpStyle
                 Add(findings, path, call, "CS-14", "log exceptions with Debug.LogException(ex, context)");
             }
 
-            if (InvokedName(call) is "StartAssetEditing" && !StopsInFinally(call))
+            if (InvokedName(call) is "StartAssetEditing" && !HasStopInFinally(call))
             {
                 Add(findings, path, call, "CS-15", "StartAssetEditing needs StopAssetEditing in a finally");
             }
@@ -258,15 +264,15 @@ internal static class CSharpStyle
         foreach (MethodDeclarationSyntax method in tree.DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
             string name = method.Identifier.ValueText;
-            bool frame = FrameMethods.Contains(name);
-            if (frame || RedrawMethods.Contains(name))
+            bool isFrame = FrameMethods.Contains(name);
+            if (isFrame || RedrawMethods.Contains(name))
             {
-                CheckFrameBody(path, method, frame, findings);
+                CheckFrameBody(path, method, isFrame, findings);
             }
         }
     }
 
-    private static void CheckFrameBody(string path, MethodDeclarationSyntax method, bool frame, List<string> findings)
+    private static void CheckFrameBody(string path, MethodDeclarationSyntax method, bool isFrame, List<string> findings)
     {
         string where = method.Identifier.ValueText;
         foreach (SyntaxNode node in method.DescendantNodes())
@@ -285,10 +291,10 @@ internal static class CSharpStyle
                 case MemberAccessExpressionSyntax access when MeshArrays.Contains(access.Name.Identifier.ValueText) && access.Parent is not AssignmentExpressionSyntax:
                     Add(findings, path, access, "CS-19", $"{access.Name.Identifier.ValueText} copies the array on every read; read it once outside {where}");
                     break;
-                case InterpolatedStringExpressionSyntax when frame:
+                case InterpolatedStringExpressionSyntax when isFrame:
                     Add(findings, path, node, "CS-19", $"no string building in {where}");
                     break;
-                case BinaryExpressionSyntax binary when frame && binary.IsKind(SyntaxKind.AddExpression) && IsStringExpression(binary):
+                case BinaryExpressionSyntax binary when isFrame && binary.IsKind(SyntaxKind.AddExpression) && IsStringExpression(binary):
                     Add(findings, path, node, "CS-19", $"no string building in {where}");
                     break;
                 default:
@@ -307,9 +313,9 @@ internal static class CSharpStyle
         };
     }
 
-    private static bool StopsInFinally(InvocationExpressionSyntax call)
+    private static bool HasStopInFinally(InvocationExpressionSyntax call)
     {
-        static bool Stops(TryStatementSyntax? attempt) =>
+        static bool HasStop(TryStatementSyntax? attempt) =>
             attempt?.Finally?.Block.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(stop => InvokedName(stop) is "StopAssetEditing") == true;
 
         StatementSyntax? statement = call.FirstAncestorOrSelf<StatementSyntax>();
@@ -319,21 +325,21 @@ internal static class CSharpStyle
         }
 
         int index = block.Statements.IndexOf(statement);
-        bool followedByTry = index + 1 < block.Statements.Count && Stops(block.Statements[index + 1] as TryStatementSyntax);
-        return followedByTry || (block.Parent is TryStatementSyntax enclosing && enclosing.Block == block && Stops(enclosing));
+        bool isFollowedByTry = index + 1 < block.Statements.Count && HasStop(block.Statements[index + 1] as TryStatementSyntax);
+        return isFollowedByTry || (block.Parent is TryStatementSyntax enclosing && enclosing.Block == block && HasStop(enclosing));
     }
 
-    private static void CheckDotNet(string path, SyntaxNode tree, bool tests, bool core, List<string> findings)
+    private static void CheckDotNet(string path, SyntaxNode tree, bool isTest, bool isCore, List<string> findings)
     {
         foreach (MethodDeclarationSyntax method in tree.DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
-            bool asynchronous = LastName(method.ReturnType) is "Task" or "ValueTask";
-            bool exempt = tests
+            bool isAsynchronous = LastName(method.ReturnType) is "Task" or "ValueTask";
+            bool isExempt = isTest
                 || method.Modifiers.Any(SyntaxKind.OverrideKeyword)
                 || method.ExplicitInterfaceSpecifier is not null
                 || method.Identifier.ValueText is "Main" or "DisposeAsync";
             bool hasToken = method.ParameterList.Parameters.Any(parameter => LastName(parameter.Type) is "CancellationToken");
-            if (asynchronous && !exempt && !hasToken)
+            if (isAsynchronous && !isExempt && !hasToken)
             {
                 Add(findings, path, method, "CS-6", $"{method.Identifier.ValueText} takes no CancellationToken");
             }
@@ -347,7 +353,7 @@ internal static class CSharpStyle
             }
         }
 
-        if (!core)
+        if (!isCore)
         {
             return;
         }
@@ -376,10 +382,10 @@ internal static class CSharpStyle
         if (own.Contains("global.json"))
         {
             using var global = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "global.json")));
-            bool pinned = global.RootElement.TryGetProperty("sdk", out JsonElement sdk)
+            bool isPinned = global.RootElement.TryGetProperty("sdk", out JsonElement sdk)
                 && sdk.TryGetProperty("version", out JsonElement version) && version.GetString()?.StartsWith("10.", StringComparison.Ordinal) == true
                 && sdk.TryGetProperty("rollForward", out JsonElement roll) && roll.GetString() is "latestFeature";
-            if (!pinned)
+            if (!isPinned)
             {
                 findings.Add("global.json(1,1): CS-24 pin sdk.version 10.x with rollForward latestFeature");
             }
@@ -395,26 +401,26 @@ internal static class CSharpStyle
 
     private static string Property(XDocument xml, string name) => xml.Descendants(name).LastOrDefault()?.Value.Trim() ?? string.Empty;
 
-    private static bool References(XDocument xml, string package) =>
+    private static bool HasReference(XDocument xml, string package) =>
         xml.Descendants("PackageReference").Any(reference => ((string?)reference.Attribute("Include"))?.StartsWith(package, StringComparison.OrdinalIgnoreCase) == true);
 
     private static void CheckProject(string project, XDocument xml, List<string> findings)
     {
         string name = Path.GetFileNameWithoutExtension(project);
         string folder = project.Contains('/', StringComparison.Ordinal) ? project[..project.LastIndexOf('/')] : string.Empty;
-        bool benchmarks = References(xml, "BenchmarkDotNet");
-        string expected = name.EndsWith(".Tests", StringComparison.Ordinal) ? "tests/" : benchmarks ? "benchmarks/" : "src/";
+        bool hasBenchmarks = HasReference(xml, "BenchmarkDotNet");
+        string expected = name.EndsWith(".Tests", StringComparison.Ordinal) ? "tests/" : hasBenchmarks ? "benchmarks/" : "src/";
         if (!string.Equals(folder, expected + name, StringComparison.Ordinal))
         {
             findings.Add($"{project}(1,1): CS-24 belongs at {expected}{name}/{name}.csproj");
         }
 
-        if (name.EndsWith(".Tests", StringComparison.Ordinal) && !References(xml, "xunit"))
+        if (name.EndsWith(".Tests", StringComparison.Ordinal) && !HasReference(xml, "xunit"))
         {
             findings.Add($"{project}(1,1): CS-21 test projects use xUnit");
         }
 
-        if (benchmarks && !name.EndsWith(".Benchmarks", StringComparison.Ordinal))
+        if (hasBenchmarks && !name.EndsWith(".Benchmarks", StringComparison.Ordinal))
         {
             findings.Add($"{project}(1,1): CS-16 benchmark projects are named <App>.Benchmarks");
         }
@@ -425,8 +431,8 @@ internal static class CSharpStyle
         }
 
         string framework = Property(xml, "TargetFramework");
-        bool ui = Property(xml, "UseWPF") is "true" || Property(xml, "UseWindowsForms") is "true";
-        if (!framework.StartsWith("net10.0", StringComparison.Ordinal) || (name.EndsWith(".Core", StringComparison.Ordinal) && (framework is not "net10.0" || ui)))
+        bool hasUserInterface = Property(xml, "UseWPF") is "true" || Property(xml, "UseWindowsForms") is "true";
+        if (!framework.StartsWith("net10.0", StringComparison.Ordinal) || (name.EndsWith(".Core", StringComparison.Ordinal) && (framework is not "net10.0" || hasUserInterface)))
         {
             findings.Add($"{project}(1,1): CS-24 target net10.0 (Core projects plain net10.0 with no UI)");
         }
@@ -488,9 +494,9 @@ internal static class CSharpStyle
                 findings.Add($"{asmdef}(1,1): CS-25 rootNamespace is WhyKnot.<Name>");
             }
 
-            bool editorOnly = json.TryGetProperty("includePlatforms", out JsonElement platforms) && platforms.ValueKind == JsonValueKind.Array
+            bool isEditorOnly = json.TryGetProperty("includePlatforms", out JsonElement platforms) && platforms.ValueKind == JsonValueKind.Array
                 && platforms.GetArrayLength() == 1 && platforms[0].GetString() is "Editor";
-            if (folder is "Editor" or "Tests/Editor" && !editorOnly)
+            if (folder is "Editor" or "Tests/Editor" && !isEditorOnly)
             {
                 findings.Add($"{asmdef}(1,1): CS-25 includePlatforms is [\"Editor\"]");
             }
@@ -501,9 +507,9 @@ internal static class CSharpStyle
             }
         }
 
-        bool headlessTests = own.Exists(path => path.StartsWith("headless/", StringComparison.Ordinal) && path.EndsWith(".Tests.csproj", StringComparison.Ordinal)
+        bool hasHeadlessTests = own.Exists(path => path.StartsWith("headless/", StringComparison.Ordinal) && path.EndsWith(".Tests.csproj", StringComparison.Ordinal)
             && File.ReadAllText(Path.Combine(root, path)).Contains("\"NUnit\"", StringComparison.Ordinal));
-        if (hasCore && !headlessTests)
+        if (hasCore && !hasHeadlessTests)
         {
             findings.Add("headless(1,1): CS-21 the Core assembly is tested headless with NUnit in headless/<App>.Tests");
         }

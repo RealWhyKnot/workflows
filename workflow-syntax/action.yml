@@ -5,7 +5,7 @@ inputs:
   root:
     description: Repository root to scan. Defaults to the workspace.
     required: false
-    default: ''
+    default: ""
 
 runs:
   using: composite

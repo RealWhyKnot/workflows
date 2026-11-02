@@ -7,11 +7,11 @@ The GitHub Actions, reusable workflows, git hooks and lint configs that my repos
 
 ## Picking a version
 
-| ref | points to |
-| --- | --- |
-| `@v1` | latest release, and what all my repos use |
+| ref              | points to                                                           |
+| ---------------- | ------------------------------------------------------------------- |
+| `@v1`            | latest release, and what all my repos use                           |
 | `@v2026.10.28.0` | that release. Change the tag when you want to upgrade or roll back. |
-| `@<commit sha>` | that commit |
+| `@<commit sha>`  | that commit                                                         |
 
 If you use these from your own repo, pin a release tag. [Versioning](#versioning) has the details,
 and each release on the [releases page](https://github.com/RealWhyKnot/workflows/releases) lists
@@ -19,22 +19,22 @@ what changed.
 
 ## Contents
 
-| workflow | what it does |
-| --- | --- |
-| [`commit-msg-check.yml`](#commit-msg-checkyml) | Checks commit subjects for build stamps, and optionally for conventional types and forbidden body text |
-| [`version-guard.yml`](#version-guardyml) | Fails if a `const string Version` comes back in `Editor/` or `Runtime/` |
-| [`dependabot-automerge.yml`](#dependabot-automergeyml) | Auto-merge for the Dependabot updates you allow |
-| [`repo-checks.yml`](#repo-checksyml) | `workflow-syntax`, `conformance` and actionlint |
-| [`changelog-append.yml`](#changelog-append) | Runs your changelog script on a push and commits the result as a signed commit |
-| [`nightly-beta.yml`](#nightly-beta) | Tags a nightly beta when main has changed since the last tag |
-| [`nightly-beta-scripted.yml`](#nightly-beta) | Same, but your own script picks the tag |
+| workflow                                               | what it does                                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| [`commit-msg-check.yml`](#commit-msg-checkyml)         | Checks commit subjects for build stamps, and optionally for conventional types and forbidden body text |
+| [`version-guard.yml`](#version-guardyml)               | Fails if a `const string Version` comes back in `Editor/` or `Runtime/`                                |
+| [`dependabot-automerge.yml`](#dependabot-automergeyml) | Auto-merge for the Dependabot updates you allow                                                        |
+| [`repo-checks.yml`](#repo-checksyml)                   | `workflow-syntax`, `conformance` and actionlint                                                        |
+| [`changelog-append.yml`](#changelog-append)            | Runs your changelog script on a push and commits the result as a signed commit                         |
+| [`nightly-beta.yml`](#nightly-beta)                    | Tags a nightly beta when main has changed since the last tag                                           |
+| [`nightly-beta-scripted.yml`](#nightly-beta)           | Same, but your own script picks the tag                                                                |
 
-| group | actions |
-| --- | --- |
-| Releases | [`resolve-tag`](#resolve-tag), [`version-sequence`](#version-sequence), [`release-notes`](#release-notes), [`checksums`](#checksums), [`publish-release`](#publish-release), [`commit-on-branch`](#commit-on-branch) |
-| Nightly betas | [`beta-gate`](#beta-gate), [`nightly-plan`](#nightly-plan), [`wait-for-ci`](#wait-for-ci) |
-| Repo checks | [`commit-subjects`](#commit-subjects), [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance) |
-| Setup | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis) |
+| group         | actions                                                                                                                                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Releases      | [`resolve-tag`](#resolve-tag), [`version-sequence`](#version-sequence), [`release-notes`](#release-notes), [`checksums`](#checksums), [`publish-release`](#publish-release), [`commit-on-branch`](#commit-on-branch) |
+| Nightly betas | [`beta-gate`](#beta-gate), [`nightly-plan`](#nightly-plan), [`wait-for-ci`](#wait-for-ci)                                                                                                                            |
+| Repo checks   | [`commit-subjects`](#commit-subjects), [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance)                                                                                                          |
+| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis)                                                                                                                                                             |
 
 The repo also has my [git hooks](#hooks), [lint baselines](#lint) and a starting
 [Dependabot config](#dependabot).
@@ -62,13 +62,13 @@ jobs:
 A called workflow only gets the permissions its caller grants, and a step that needs more fails with
 a 403.
 
-| workflow | permissions |
-| --- | --- |
-| `commit-msg-check.yml`, `version-guard.yml`, `repo-checks.yml` | `contents: read` |
-| `dependabot-automerge.yml` | `contents: write`, `pull-requests: write` |
-| `changelog-append.yml` | `contents: write` |
-| `nightly-beta.yml` | `contents: write`, plus `actions: read` for `ci-workflow` and `actions: write` for `dispatch-release` |
-| `nightly-beta-scripted.yml` | `contents: write`, `actions: write` |
+| workflow                                                       | permissions                                                                                           |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `commit-msg-check.yml`, `version-guard.yml`, `repo-checks.yml` | `contents: read`                                                                                      |
+| `dependabot-automerge.yml`                                     | `contents: write`, `pull-requests: write`                                                             |
+| `changelog-append.yml`                                         | `contents: write`                                                                                     |
+| `nightly-beta.yml`                                             | `contents: write`, plus `actions: read` for `ci-workflow` and `actions: write` for `dispatch-release` |
+| `nightly-beta-scripted.yml`                                    | `contents: write`, `actions: write`                                                                   |
 
 Runs that Dependabot triggers get a read-only token. If your job doesn't grant
 `dependabot-automerge.yml` the permissions in the table, its merge call fails.
@@ -78,13 +78,13 @@ Runs that Dependabot triggers get a read-only token. If your job doesn't grant
 Fails when a commit subject has more than one CalVer build stamp. It can also require conventional
 subjects, and reject commit bodies that match a pattern. All inputs are optional.
 
-| input | default | description |
-| --- | --- | --- |
-| `check-stamp` | `true` | Fail on a subject with more than one build stamp |
-| `stamp-pattern` | `\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}\|beta))?\)` | Regex for one stamp |
-| `check-conventional` | `false` | Also require conventional subjects |
-| `conventional-pattern` | `^(feat\|fix\|chore\|ci\|docs\|refactor\|revert\|test\|perf\|diag\|style)(\([a-z0-9-]+\))?!?: .+` | Regex for a conventional subject |
-| `forbidden-body-pattern` | none | Fail any non-merge commit whose body matches. I use it in forks to keep upstream issue numbers out of the history. |
+| input                    | default                                                                                           | description                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `check-stamp`            | `true`                                                                                            | Fail on a subject with more than one build stamp                                                                   |
+| `stamp-pattern`          | `\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-([A-Fa-f0-9]{4}\|beta))?\)`                                  | Regex for one stamp                                                                                                |
+| `check-conventional`     | `false`                                                                                           | Also require conventional subjects                                                                                 |
+| `conventional-pattern`   | `^(feat\|fix\|chore\|ci\|docs\|refactor\|revert\|test\|perf\|diag\|style)(\([a-z0-9-]+\))?!?: .+` | Regex for a conventional subject                                                                                   |
+| `forbidden-body-pattern` | none                                                                                              | Fail any non-merge commit whose body matches. I use it in forks to keep upstream issue numbers out of the history. |
 
 Merge and revert commits still have their stamps counted but skip the conventional and body checks.
 
@@ -97,21 +97,21 @@ Its one input is `error-hint`, which is added to the failure message. It default
 
 Turns on auto-merge for Dependabot PRs whose update type you allow.
 
-| input | default | description |
-| --- | --- | --- |
+| input          | default                       | description                                      |
+| -------------- | ----------------------------- | ------------------------------------------------ |
 | `update-types` | `version-update:semver-patch` | Update types allowed to auto-merge, one per line |
-| `merge-method` | `rebase` | `merge`, `squash` or `rebase` |
+| `merge-method` | `rebase`                      | `merge`, `squash` or `rebase`                    |
 
 ### repo-checks.yml
 
 Runs [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance) and actionlint (with
 shellcheck). My repos all call it from CI.
 
-| input | default | description |
-| --- | --- | --- |
-| `pins` | `warn` | Passed to `conformance` |
-| `ignore-ecosystems` | none | Passed to `conformance` |
-| `actionlint` | `true` | Run actionlint and shellcheck on the workflows |
+| input               | default | description                                    |
+| ------------------- | ------- | ---------------------------------------------- |
+| `pins`              | `warn`  | Passed to `conformance`                        |
+| `ignore-ecosystems` | none    | Passed to `conformance`                        |
+| `actionlint`        | `true`  | Run actionlint and shellcheck on the workflows |
 
 ## Releases
 
@@ -129,20 +129,20 @@ Validates the tag being released and outputs its version, commit, and whether it
 With no `tag` it uses the ref that triggered the run. The same step then works for a tag push and
 for a manual re-release.
 
-| input | default | description |
-| --- | --- | --- |
-| `tag` | triggering ref | Tag to release |
-| `tag-pattern` | `^v\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}\|beta))?$` | Regex for a valid tag |
-| `prerelease-pattern` | `-beta` only | Regex for prerelease tags. Widen it if other suffixes should count too. |
-| `require-tag-exists` | `true` | Fail unless the tag resolves to a commit in the checkout |
+| input                | default                                             | description                                                             |
+| -------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
+| `tag`                | triggering ref                                      | Tag to release                                                          |
+| `tag-pattern`        | `^v\d{4}\.\d+\.\d+\.\d+(-([A-Fa-f0-9]{4}\|beta))?$` | Regex for a valid tag                                                   |
+| `prerelease-pattern` | `-beta` only                                        | Regex for prerelease tags. Widen it if other suffixes should count too. |
+| `require-tag-exists` | `true`                                              | Fail unless the tag resolves to a commit in the checkout                |
 
-| output | description |
-| --- | --- |
-| `tag` | The tag |
-| `version` | The tag minus its leading `v` |
-| `prerelease` | `true` if the tag matches `prerelease-pattern` |
-| `channel` | `beta` for a prerelease, else `release` |
-| `sha` | Commit the tag points at (empty when `require-tag-exists` is off) |
+| output       | description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `tag`        | The tag                                                           |
+| `version`    | The tag minus its leading `v`                                     |
+| `prerelease` | `true` if the tag matches `prerelease-pattern`                    |
+| `channel`    | `beta` for a prerelease, else `release`                           |
+| `sha`        | Commit the tag points at (empty when `require-tag-exists` is off) |
 
 There are two patterns because a tag ending in `-A1B2` is valid without being a beta. My repos treat
 it differently.
@@ -157,11 +157,11 @@ A CalVer tag has to use the next free revision for its day, or this fails.
     tag: ${{ steps.tag.outputs.tag }}
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `tag` | required | Tag being released |
+| input               | default          | description                                                                   |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `tag`               | required         | Tag being released                                                            |
 | `prerelease-suffix` | `[A-Za-z0-9]{4}` | Regex for the part after the hyphen. Only used to decide if the tag is valid. |
-| `repo-root` | workspace | Repo to read tags from |
+| `repo-root`         | workspace        | Repo to read tags from                                                        |
 
 Each day starts at `.0`. After that a tag has to be one above the highest tag from the same day,
 whatever its suffix. Re-running a release for an existing tag still passes, because the tag under
@@ -188,13 +188,13 @@ Builds release notes from conventional commits and writes them to a file for `gh
   run: gh release create '${{ steps.release_tag.outputs.tag }}' --notes-file '${{ steps.notes.outputs.file }}'
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `tag` | required | Tag being released |
-| `repository` | calling repo | `owner/name` to read commits from |
-| `previous-tag` | worked out | Tag to diff against. For a stable tag that's the previous stable tag; for a prerelease, whichever tag came just before. |
-| `title` | none | H1 above the changes |
-| `extra` | none | Markdown appended after the changelog (downloads, hashes) |
+| input          | default      | description                                                                                                             |
+| -------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `tag`          | required     | Tag being released                                                                                                      |
+| `repository`   | calling repo | `owner/name` to read commits from                                                                                       |
+| `previous-tag` | worked out   | Tag to diff against. For a stable tag that's the previous stable tag; for a prerelease, whichever tag came just before. |
+| `title`        | none         | H1 above the changes                                                                                                    |
+| `extra`        | none         | Markdown appended after the changelog (downloads, hashes)                                                               |
 
 The one output, `file`, is the path of the Markdown it wrote. You need `fetch-depth: 0` and
 `fetch-tags: true` on the checkout, or it has no history to read.
@@ -228,20 +228,20 @@ the release notes.
     contents: dist/publish
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `archives` | required | Paths or globs, one per line. A pattern with no match fails the job, for instance after an artifact is renamed. |
-| `contents` | sibling | Directory whose files are listed in the manifest after the archive's own row. If unset, it's the folder next to each archive with the same base name. |
-| `manifest-suffix` | `.integrity.tsv` | Suffix for the file written next to each archive |
-| `manifest` | `true` | `false` returns the table without writing any manifests |
-| `units` | `MiB` | `MiB` (1048576 bytes) or `MB` (1000000). The table header says which. |
-| `table-file` | none | Also write the table to this path |
+| input             | default          | description                                                                                                                                           |
+| ----------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `archives`        | required         | Paths or globs, one per line. A pattern with no match fails the job, for instance after an artifact is renamed.                                       |
+| `contents`        | sibling          | Directory whose files are listed in the manifest after the archive's own row. If unset, it's the folder next to each archive with the same base name. |
+| `manifest-suffix` | `.integrity.tsv` | Suffix for the file written next to each archive                                                                                                      |
+| `manifest`        | `true`           | `false` returns the table without writing any manifests                                                                                               |
+| `units`           | `MiB`            | `MiB` (1048576 bytes) or `MB` (1000000). The table header says which.                                                                                 |
+| `table-file`      | none             | Also write the table to this path                                                                                                                     |
 
-| output | description |
-| --- | --- |
-| `sha256` | SHA-256 of the first archive |
+| output      | description                                  |
+| ----------- | -------------------------------------------- |
+| `sha256`    | SHA-256 of the first archive                 |
 | `manifests` | Paths of the manifests written, one per line |
-| `table` | The Markdown table |
+| `table`     | The Markdown table                           |
 
 A manifest is a tab-separated file with no header and one `hash  bytes  name` line per file, archive
 first. Hashes are lowercase. `.tar.gz` drops both extensions (`app-1.0.0.tar.gz` gets
@@ -267,19 +267,19 @@ Creates the release, uploads the assets, and can check that the upload worked.
       dist/app.zip.sha256
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `tag` | required | Tag to publish |
-| `title` | tag | Release title |
-| `notes-file` | none | Path to the Markdown notes |
-| `assets` | none | Files to upload, one per line. Globs like `dist/python/*` work, and one that matches nothing is skipped. |
-| `repository` | calling repo | `owner/name` to publish to |
-| `target` | none | Commit-ish for the release |
-| `prerelease` | `false` | Adds `--prerelease --latest=false` |
-| `draft-first` | `false` | Create a draft, check that all assets are attached, then publish |
-| `delete-existing` | `false` | If the tag already has a release, delete it first |
-| `verify-asset` | none | Asset whose digest is checked after upload |
-| `verify-sha256` | none | Expected SHA-256 of that asset |
+| input             | default      | description                                                                                              |
+| ----------------- | ------------ | -------------------------------------------------------------------------------------------------------- |
+| `tag`             | required     | Tag to publish                                                                                           |
+| `title`           | tag          | Release title                                                                                            |
+| `notes-file`      | none         | Path to the Markdown notes                                                                               |
+| `assets`          | none         | Files to upload, one per line. Globs like `dist/python/*` work, and one that matches nothing is skipped. |
+| `repository`      | calling repo | `owner/name` to publish to                                                                               |
+| `target`          | none         | Commit-ish for the release                                                                               |
+| `prerelease`      | `false`      | Adds `--prerelease --latest=false`                                                                       |
+| `draft-first`     | `false`      | Create a draft, check that all assets are attached, then publish                                         |
+| `delete-existing` | `false`      | If the tag already has a release, delete it first                                                        |
+| `verify-asset`    | none         | Asset whose digest is checked after upload                                                               |
+| `verify-sha256`   | none         | Expected SHA-256 of that asset                                                                           |
 
 Turn on `draft-first` anywhere a failed upload would otherwise leave an empty release published. If
 a re-run finds a draft for the tag, such as one from a failed run, it checks that draft's assets and
@@ -306,21 +306,21 @@ fail.
 ```yaml
 - uses: RealWhyKnot/workflows/commit-on-branch@v1
   with:
-    headline: 'docs(changelog): promote Unreleased to ${{ steps.tag.outputs.tag }} [skip changelog]'
+    headline: "docs(changelog): promote Unreleased to ${{ steps.tag.outputs.tag }} [skip changelog]"
     paths: |
       CHANGELOG.md
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `paths` | required | Files to commit, one per line, relative to the workspace |
-| `headline` | required | Commit subject |
-| `body` | none | Commit body |
-| `branch` | `main` | Branch to commit to |
-| `repository` | calling repo | `owner/name` to commit to |
-| `skip-if-unchanged` | `true` | Do nothing if the files already match the branch |
-| `verify-signature` | `true` | Fail unless GitHub marks the new commit verified |
-| `warn-on-failure` | `false` | Warn instead of failing the job, for when a missed changelog commit shouldn't fail a release |
+| input               | default      | description                                                                                  |
+| ------------------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `paths`             | required     | Files to commit, one per line, relative to the workspace                                     |
+| `headline`          | required     | Commit subject                                                                               |
+| `body`              | none         | Commit body                                                                                  |
+| `branch`            | `main`       | Branch to commit to                                                                          |
+| `repository`        | calling repo | `owner/name` to commit to                                                                    |
+| `skip-if-unchanged` | `true`       | Do nothing if the files already match the branch                                             |
+| `verify-signature`  | `true`       | Fail unless GitHub marks the new commit verified                                             |
+| `warn-on-failure`   | `false`      | Warn instead of failing the job, for when a missed changelog commit shouldn't fail a release |
 
 It reads the branch head and sends it as `expectedHeadOid`. If another commit reached the branch in
 between, GitHub rejects the mutation.
@@ -345,11 +345,11 @@ jobs:
       range: ${{ inputs.range }}
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `range` | the push | Commit range to append |
-| `changelog-paths` | `CHANGELOG.md` | Changelog files the script maintains, one per line |
-| `script` | `./.github/scripts/Update-Changelog.ps1` | Script that appends the entries |
+| input             | default                                  | description                                        |
+| ----------------- | ---------------------------------------- | -------------------------------------------------- |
+| `range`           | the push                                 | Commit range to append                             |
+| `changelog-paths` | `CHANGELOG.md`                           | Changelog files the script maintains, one per line |
+| `script`          | `./.github/scripts/Update-Changelog.ps1` | Script that appends the entries                    |
 
 Keep the `if:` guard on your job. A manual re-run or a commit from another actor can still start a
 loop.
@@ -376,15 +376,15 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `timezone` | `America/Chicago` | Time zone for the tag's date |
-| `suffix` | `beta` | Prerelease suffix |
-| `assert-sequence` | `true` | Run [`version-sequence`](#version-sequence) on the tag before pushing it |
-| `prerelease-suffix` | `[A-Za-z0-9]{4}` | Suffix regex for that check |
-| `dispatch-release` | `false` | Start your `release.yml` with the new tag |
-| `ignore-paths`, `release-types` | same as `beta-gate` | Passed to the gate |
-| `ci-workflow` | none | Workflow file (e.g. `ci.yml`) whose push run must pass on the commit first |
+| input                           | default             | description                                                                |
+| ------------------------------- | ------------------- | -------------------------------------------------------------------------- |
+| `timezone`                      | `America/Chicago`   | Time zone for the tag's date                                               |
+| `suffix`                        | `beta`              | Prerelease suffix                                                          |
+| `assert-sequence`               | `true`              | Run [`version-sequence`](#version-sequence) on the tag before pushing it   |
+| `prerelease-suffix`             | `[A-Za-z0-9]{4}`    | Suffix regex for that check                                                |
+| `dispatch-release`              | `false`             | Start your `release.yml` with the new tag                                  |
+| `ignore-paths`, `release-types` | same as `beta-gate` | Passed to the gate                                                         |
+| `ci-workflow`                   | none                | Workflow file (e.g. `ci.yml`) whose push run must pass on the commit first |
 
 The `tag` output is the tag it pushed, or empty if nothing changed.
 
@@ -400,14 +400,14 @@ job, and raises the job timeout from 5 minutes to 30.
 the beta gate. It accepts the same gate and `ci-workflow` inputs as `nightly-beta.yml`, plus the
 ones below.
 
-| input | default | description |
-| --- | --- | --- |
-| `runs-on` | `windows-latest` | Runner label |
-| `planner` | `./.github/scripts/Get-NightlyBetaPlan.ps1` | Script that picks the next tag and sets `has_changes` and `next_tag` |
-| `validate-scripts` | none | Self-test scripts to run before planning, one per line |
-| `no-changes-message` | `No app changes since the latest release tag.` | Printed when there is nothing to release |
-| `dispatch-release` | `true` | Start your `release.yml` with the new tag |
-| `timeout-minutes` | `15` | Job timeout (45 when `ci-workflow` is set) |
+| input                | default                                        | description                                                          |
+| -------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
+| `runs-on`            | `windows-latest`                               | Runner label                                                         |
+| `planner`            | `./.github/scripts/Get-NightlyBetaPlan.ps1`    | Script that picks the next tag and sets `has_changes` and `next_tag` |
+| `validate-scripts`   | none                                           | Self-test scripts to run before planning, one per line               |
+| `no-changes-message` | `No app changes since the latest release tag.` | Printed when there is nothing to release                             |
+| `dispatch-release`   | `true`                                         | Start your `release.yml` with the new tag                            |
+| `timeout-minutes`    | `15`                                           | Job timeout (45 when `ci-workflow` is set)                           |
 
 ### beta-gate
 
@@ -425,17 +425,17 @@ Says whether a commit since the last tag changes the program. Both nightly workf
       app/tests/**
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `base` | nearest tag | Ref to compare against. If it doesn't exist, everything is new and the gate passes. |
-| `tag-glob` | `v*` | Tags considered when looking for the nearest one |
-| `ignore-paths` | none | Extra globs on top of the built-in list, one per line |
-| `release-types` | `feat fix perf refactor revert` | Commit types that count as a release (replaces the list) |
+| input           | default                         | description                                                                         |
+| --------------- | ------------------------------- | ----------------------------------------------------------------------------------- |
+| `base`          | nearest tag                     | Ref to compare against. If it doesn't exist, everything is new and the gate passes. |
+| `tag-glob`      | `v*`                            | Tags considered when looking for the nearest one                                    |
+| `ignore-paths`  | none                            | Extra globs on top of the built-in list, one per line                               |
+| `release-types` | `feat fix perf refactor revert` | Commit types that count as a release (replaces the list)                            |
 
-| output | description |
-| --- | --- |
+| output        | description                                                                                        |
+| ------------- | -------------------------------------------------------------------------------------------------- |
 | `has_changes` | `true` if some commit has one of those types (or a `!`) and touches a path outside the ignore list |
-| `base` | Ref it compared against |
+| `base`        | Ref it compared against                                                                            |
 
 The built-in ignore list is `.github/**`, `.githooks/**`, `docs/**`, `wiki/**`, `tests/**`,
 `test/**`, `*.md`, `LICENSE*`, `NOTICE`, `.gitignore`, `.gitattributes`, `.editorconfig` and
@@ -458,16 +458,16 @@ Runs the beta gate and works out the day's next nightly tag, without creating or
     suffix: beta
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `timezone` | `America/Chicago` | Time zone for the tag's date |
-| `suffix` | `beta` | Part after the hyphen. Empty gives a plain `vYYYY.M.D.N`. |
-| `tag-glob`, `ignore-paths`, `release-types` | same as `beta-gate` | Passed to the gate |
+| input                                       | default             | description                                               |
+| ------------------------------------------- | ------------------- | --------------------------------------------------------- |
+| `timezone`                                  | `America/Chicago`   | Time zone for the tag's date                              |
+| `suffix`                                    | `beta`              | Part after the hyphen. Empty gives a plain `vYYYY.M.D.N`. |
+| `tag-glob`, `ignore-paths`, `release-types` | same as `beta-gate` | Passed to the gate                                        |
 
-| output | description |
-| --- | --- |
+| output        | description                                              |
+| ------------- | -------------------------------------------------------- |
 | `has_changes` | `true` if a commit since the nearest tag passes the gate |
-| `next_tag` | Tag to create (empty when the gate fails) |
+| `next_tag`    | Tag to create (empty when the gate fails)                |
 
 The tag is `vYYYY.M.D.N-suffix`, with `N` one above the highest tag from that day whatever its
 suffix, which matches what `version-sequence` expects. Like the gate, you need `fetch-depth: 0` for
@@ -484,19 +484,19 @@ anything that tags or publishes. Needs `actions: read`.
     workflow: ci.yml
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `sha` | triggering commit | Commit to check |
-| `workflow` | `ci.yml` | Workflow file whose runs count |
-| `repository` | calling repo | `owner/name` |
-| `timeout-minutes` | `20` | How long to wait for a run that's still going |
-| `grace-minutes` | `3` | Minutes to wait for a run on a commit by a person before checking its ancestors |
-| `max-depth` | `30` | Max ancestors to look through |
+| input             | default           | description                                                                     |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `sha`             | triggering commit | Commit to check                                                                 |
+| `workflow`        | `ci.yml`          | Workflow file whose runs count                                                  |
+| `repository`      | calling repo      | `owner/name`                                                                    |
+| `timeout-minutes` | `20`              | How long to wait for a run that's still going                                   |
+| `grace-minutes`   | `3`               | Minutes to wait for a run on a commit by a person before checking its ancestors |
+| `max-depth`       | `30`              | Max ancestors to look through                                                   |
 
-| output | description |
-| --- | --- |
-| `sha` | Commit whose run passed |
-| `run-url` | Link to that run |
+| output    | description             |
+| --------- | ----------------------- |
+| `sha`     | Commit whose run passed |
+| `run-url` | Link to that run        |
 
 Only the latest attempt of each run counts. Pull request runs are ignored.
 
@@ -551,23 +551,23 @@ Checks your repo against the shared setup. It fails when
 - uses: RealWhyKnot/workflows/conformance@v1
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `shared-ref` | `v1` | Ref that shared references must use |
-| `pins` | `warn` | `warn`, `fail` or `off` for stale third-party pins |
-| `ignore-ecosystems` | none | Ecosystems the repo leaves out on purpose, one per line |
-| `root` | workspace | Repo to check |
+| input               | default   | description                                             |
+| ------------------- | --------- | ------------------------------------------------------- |
+| `shared-ref`        | `v1`      | Ref that shared references must use                     |
+| `pins`              | `warn`    | `warn`, `fail` or `off` for stale third-party pins      |
+| `ignore-ecosystems` | none      | Ecosystems the repo leaves out on purpose, one per line |
+| `root`              | workspace | Repo to check                                           |
 
 It works out the ecosystems from tracked files.
 
-| file | ecosystem |
-| --- | --- |
-| `Cargo.toml` | cargo |
-| project files, `Directory.Packages.props`, `packages.config` | nuget |
-| `package.json`, unless it's a Unity or VPM package | npm |
-| `requirements*.txt`, `pyproject.toml`, `Pipfile` | pip |
-| `go.mod` | gomod |
-| any workflow or `action.yml` | github-actions |
+| file                                                         | ecosystem      |
+| ------------------------------------------------------------ | -------------- |
+| `Cargo.toml`                                                 | cargo          |
+| project files, `Directory.Packages.props`, `packages.config` | nuget          |
+| `package.json`, unless it's a Unity or VPM package           | npm            |
+| `requirements*.txt`, `pyproject.toml`, `Pipfile`             | pip            |
+| `go.mod`                                                     | gomod          |
+| any workflow or `action.yml`                                 | github-actions |
 
 A third-party action pinned to a branch, or to an older major than its latest release, gets a
 warning. `pins: fail` makes it an error and `pins: off` skips the lookups. SHA pins and local
@@ -586,13 +586,13 @@ registry, git checkouts and `target`.
     components: rustfmt, clippy
 ```
 
-| input | default | description |
-| --- | --- | --- |
-| `toolchain` | from the file, else `stable` | Toolchain to install |
-| `components`, `targets` | none | Added to whatever the file lists. Comma or newline separated. |
-| `working-directory` | `.` | Where `Cargo.lock` and `target` are, and where the search for `rust-toolchain.toml` starts |
-| `cache` | `true` | `false` turns off the cargo cache |
-| `cache-key` | `cargo` | Cache key prefix. Use a different one per job if the jobs build different things. |
+| input                   | default                      | description                                                                                |
+| ----------------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `toolchain`             | from the file, else `stable` | Toolchain to install                                                                       |
+| `components`, `targets` | none                         | Added to whatever the file lists. Comma or newline separated.                              |
+| `working-directory`     | `.`                          | Where `Cargo.lock` and `target` are, and where the search for `rust-toolchain.toml` starts |
+| `cache`                 | `true`                       | `false` turns off the cargo cache                                                          |
+| `cache-key`             | `cargo`                      | Cache key prefix. Use a different one per job if the jobs build different things.          |
 
 The `toolchain` output is the toolchain it installed.
 
@@ -608,7 +608,7 @@ version you asked for. Windows only. `version` is major.minor, default `3.12`.
 ```yaml
 - uses: RealWhyKnot/workflows/setup-nsis@v1
   with:
-    version: '3.12'
+    version: "3.12"
 ```
 
 ## Repo files
@@ -628,15 +628,15 @@ points `core.hooksPath` at the folder. Without `-Force` it won't overwrite a hoo
 
 Pass the same settings you gave `commit-msg-check.yml`.
 
-| flag | effect |
-| --- | --- |
-| `-StampPattern` | Narrow what counts as a build stamp |
-| `-NoStamp` | No stamping, and `prepare-commit-msg` isn't installed |
-| `-CheckConventional` | Also require conventional subjects |
-| `-ConventionalPattern` | Regex for a conventional subject, if not the default |
-| `-ForbiddenBodyPattern` | Reject a message matching this |
-| `-VersionFile` | File holding the build stamp. Default: `version.txt`. |
-| `-VersionInGitDir` | Keep that file inside `.git` so stamping doesn't leave the worktree dirty |
+| flag                    | effect                                                                    |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `-StampPattern`         | Narrow what counts as a build stamp                                       |
+| `-NoStamp`              | No stamping, and `prepare-commit-msg` isn't installed                     |
+| `-CheckConventional`    | Also require conventional subjects                                        |
+| `-ConventionalPattern`  | Regex for a conventional subject, if not the default                      |
+| `-ForbiddenBodyPattern` | Reject a message matching this                                            |
+| `-VersionFile`          | File holding the build stamp. Default: `version.txt`.                     |
+| `-VersionInGitDir`      | Keep that file inside `.git` so stamping doesn't leave the worktree dirty |
 
 Merge, revert, `fixup!` and `squash!` subjects skip the conventional and body checks.
 
@@ -762,3 +762,8 @@ publishes.
 CI runs the `Test-*.ps1` scripts on ubuntu and windows, plus actionlint, `workflow-syntax` and
 `conformance` on this repo. `commits.yml` runs `commit-msg-check.yml` on this repo's own pushes and
 PRs, with stamps off and conventional subjects required. It is not meant for other repos.
+
+`.githooks/pre-push` runs this repo's linters and tests. Turn it on with
+`git config core.hooksPath .githooks`. It needs pwsh with PSScriptAnalyzer, Node, uv and the .NET 10
+SDK. On Windows it runs the shell checks in WSL, in the distro named by `LINT_WSL_DISTRO`; that
+distro needs shellcheck, shfmt and actionlint.

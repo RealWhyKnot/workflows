@@ -27,7 +27,7 @@ on:
         description: Regex rejected anywhere in a non-merge commit body. Empty skips the check.
         type: string
         required: false
-        default: ''
+        default: ""
 
 jobs:
   check:

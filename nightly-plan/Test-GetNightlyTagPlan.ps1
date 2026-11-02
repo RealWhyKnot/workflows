@@ -28,9 +28,9 @@ function Invoke-Plan {
     [OutputType([hashtable])]
     param([hashtable] $Params)
     [System.IO.File]::WriteAllText($script:outFile, '')
-    $p = @{} + $Params
-    $p['OutputPath'] = $script:outFile
-    $null = & $script:planner @p *>&1
+    $parameters = @{} + $Params
+    $parameters['OutputPath'] = $script:outFile
+    $null = & $script:planner @parameters *>&1
     $map = @{}
     foreach ($line in [System.IO.File]::ReadAllLines($script:outFile)) {
         if ($line -match '^([^=]+)=(.*)$') { $map[$Matches[1]] = $Matches[2] }
@@ -42,10 +42,10 @@ function Assert-Plan {
     [CmdletBinding()]
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [hashtable] $Expected)
-    $r = Invoke-Plan -Params $Params
-    foreach ($k in $Expected.Keys) {
-        if ($r[$k] -ne $Expected[$k]) {
-            Write-Host "FAIL  $Name -- $k was '$($r[$k])', expected '$($Expected[$k])'"
+    $result = Invoke-Plan -Params $Params
+    foreach ($key in $Expected.Keys) {
+        if ($result[$key] -ne $Expected[$key]) {
+            Write-Host "FAIL  $Name -- $key was '$($result[$key])', expected '$($Expected[$key])'"
             $script:failures++
             return
         }

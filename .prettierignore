@@ -1,0 +1,5 @@
+**/vendor/
+**/third_party/
+**/.yarn/
+package-lock.json
+bun.lock

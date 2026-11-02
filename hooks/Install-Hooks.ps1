@@ -26,16 +26,16 @@ $hooks = @(
 
 foreach ($hook in $hooks) {
     $source = Join-Path $PSScriptRoot $hook
-    $dest = Join-Path $target $hook
-    if ((Test-Path -LiteralPath $dest) -and -not $Force) {
-        $same = (Get-FileHash $source -Algorithm SHA256).Hash -eq (Get-FileHash $dest -Algorithm SHA256).Hash
-        if (-not $same) {
+    $destination = Join-Path $target $hook
+    if ((Test-Path -LiteralPath $destination) -and -not $Force) {
+        $isSame = (Get-FileHash $source -Algorithm SHA256).Hash -eq (Get-FileHash $destination -Algorithm SHA256).Hash
+        if (-not $isSame) {
             Write-Host "$hook already exists and differs. Re-run with -Force to replace it."
             continue
         }
     }
     $text = [System.IO.File]::ReadAllText($source) -replace "`r`n", "`n"
-    [System.IO.File]::WriteAllText($dest, $text, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($destination, $text, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Installed $hook"
 }
 

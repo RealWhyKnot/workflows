@@ -30,7 +30,7 @@ function Get-TomlList {
     [OutputType([string])]
     param([string] $Text, [string] $Key)
     if ($Text -notmatch "(?m)^\s*$Key\s*=\s*\[([^\]]*)\]") { return }
-    foreach ($m in [regex]::Matches($Matches[1], '"([^"]+)"')) { $m.Groups[1].Value }
+    foreach ($match in [regex]::Matches($Matches[1], '"([^"]+)"')) { $match.Groups[1].Value }
 }
 
 if (-not $Rustup) {

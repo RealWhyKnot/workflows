@@ -34,8 +34,8 @@ function New-Commit {
     [CmdletBinding()]
     [OutputType([void])]
     param([string] $Subject, [string[]] $Files = @())
-    foreach ($f in $Files) {
-        $path = Join-Path $script:repo $f
+    foreach ($file in $Files) {
+        $path = Join-Path $script:repo $file
         $null = New-Item -ItemType Directory -Path (Split-Path $path) -Force
         [System.IO.File]::AppendAllText($path, [System.Guid]::NewGuid().ToString('N') + [Environment]::NewLine)
     }
@@ -48,16 +48,17 @@ function Assert-Gate {
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [hashtable] $Expected)
     [System.IO.File]::WriteAllText($script:outFile, '')
-    $p = @{} + $Params
-    $p['OutputPath'] = $script:outFile
-    $null = & $script:gate @p *>&1
+    $parameters = @{} + $Params
+    $parameters['OutputPath'] = $script:outFile
+    $null = & $script:gate @parameters *>&1
     $map = @{}
     foreach ($line in [System.IO.File]::ReadAllLines($script:outFile)) {
         if ($line -match '^([^=]+)=(.*)$') { $map[$Matches[1]] = $Matches[2] }
     }
-    foreach ($k in $Expected.Keys) {
-        if (-not $map.ContainsKey($k) -or $map[$k] -ne $Expected[$k]) {
-            Write-Host "FAIL  $Name -- $k was '$(if ($map.ContainsKey($k)) { $map[$k] })', expected '$($Expected[$k])'"
+    foreach ($key in $Expected.Keys) {
+        if (-not $map.ContainsKey($key) -or $map[$key] -ne $Expected[$key]) {
+            $actual = if ($map.ContainsKey($key)) { $map[$key] }
+            Write-Host "FAIL  $Name -- $key was '$actual', expected '$($Expected[$key])'"
             $script:failures++
             return
         }

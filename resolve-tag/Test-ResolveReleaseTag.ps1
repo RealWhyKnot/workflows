@@ -19,9 +19,9 @@ function Invoke-Resolve {
     [OutputType([hashtable])]
     param([hashtable] $Params)
     [System.IO.File]::WriteAllText($script:outFile, '')
-    $p = @{} + $Params
-    $p['OutputPath'] = $script:outFile
-    $null = & $script:checker @p *>&1
+    $parameters = @{} + $Params
+    $parameters['OutputPath'] = $script:outFile
+    $null = & $script:checker @parameters *>&1
     $code = $LASTEXITCODE
     $map = @{}
     foreach ($line in [System.IO.File]::ReadAllLines($script:outFile)) {
@@ -34,12 +34,18 @@ function Assert-Output {
     [CmdletBinding()]
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params, [hashtable] $Expected)
-    $r = Invoke-Resolve -Params $Params
-    if ($r.Code -ne 0) { Write-Host "FAIL  $Name -- exit $($r.Code)"; $script:failures++; return }
-    foreach ($k in $Expected.Keys) {
-        if (-not $r.Out.ContainsKey($k)) { Write-Host "FAIL  $Name -- no output '$k'"; $script:failures++; return }
-        if ($r.Out[$k] -ne $Expected[$k]) {
-            Write-Host "FAIL  $Name -- $k was '$($r.Out[$k])', expected '$($Expected[$k])'"; $script:failures++; return
+    $result = Invoke-Resolve -Params $Params
+    if ($result.Code -ne 0) { Write-Host "FAIL  $Name -- exit $($result.Code)"; $script:failures++; return }
+    foreach ($key in $Expected.Keys) {
+        if (-not $result.Out.ContainsKey($key)) {
+            Write-Host "FAIL  $Name -- no output '$key'"
+            $script:failures++
+            return
+        }
+        if ($result.Out[$key] -ne $Expected[$key]) {
+            Write-Host "FAIL  $Name -- $key was '$($result.Out[$key])', expected '$($Expected[$key])'"
+            $script:failures++
+            return
         }
     }
     Write-Host "ok    $Name"
@@ -49,8 +55,8 @@ function Assert-Failure {
     [CmdletBinding()]
     [OutputType([void])]
     param([string] $Name, [hashtable] $Params)
-    $r = Invoke-Resolve -Params $Params
-    if ($r.Code -eq 0) { Write-Host "FAIL  $Name -- expected failure, got exit 0"; $script:failures++; return }
+    $result = Invoke-Resolve -Params $Params
+    if ($result.Code -eq 0) { Write-Host "FAIL  $Name -- expected failure, got exit 0"; $script:failures++; return }
     Write-Host "ok    $Name"
 }
 
