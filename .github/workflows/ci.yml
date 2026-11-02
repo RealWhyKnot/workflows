@@ -90,3 +90,152 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./.github/lint/Invoke-PSLint.ps1
           exit $LASTEXITCODE
+
+  python:
+    name: Python style
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Check common style
+        run: uv run --frozen python -B .github/lint/style_check.py
+
+      - name: Lint Python
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit
+          uv run --frozen ruff format --check .
+          uv run --frozen ruff check --ignore-noqa .
+          uv run --frozen pyright --warnings .github/lint lint/common lint/python/.github/lint
+          uv run --frozen python -I .github/lint/pystyle.py
+
+      - name: Test common checks
+        run: timeout 180 uv run --frozen python -B -m unittest discover -s lint/common/tests -t .
+
+      - name: Test Python checks
+        working-directory: lint/python/.github/lint
+        run: timeout 180 uv run --frozen python -B -m unittest discover -s selftest -t .
+
+  typescript:
+    name: TypeScript style
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Lint TypeScript
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit
+          npx --no-install tsc --noEmit
+          npx --no-install eslint . --max-warnings 0
+          npx --no-install prettier --check .
+
+  csharp:
+    name: C# style
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore .NET dependencies
+        run: timeout 600 dotnet restore Workflows.slnx --locked-mode
+
+      - name: Check C# formatting
+        run: timeout 600 dotnet format Workflows.slnx --verify-no-changes --no-restore
+
+      - name: Build C#
+        run: timeout 600 dotnet build Workflows.slnx -c Release --no-restore
+
+      - name: Test C#
+        run: timeout 600 dotnet test Workflows.slnx -c Release --no-build
+
+      - name: Check C# style
+        run: timeout 600 dotnet run .github/lint/CSharpStyle.cs -- .
+
+  shell:
+    name: Shell style
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install shell tools
+        env:
+          SHELLCHECK_VERSION: "0.11.0"
+          SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          SHFMT_VERSION: "3.12.0"
+          SHFMT_SHA256: "d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit
+          download_directory=$(mktemp -d)
+          trap 'rm -rf "${download_directory}"' EXIT
+          tool_directory="${RUNNER_TEMP}/shell-tools/bin"
+          shellcheck_release_url="https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}"
+          curl -fsSL --max-time 60 --retry 3 \
+            "${shellcheck_release_url}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            -o "${download_directory}/shellcheck.tar.xz"
+          shfmt_release_url="https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}"
+          curl -fsSL --max-time 60 --retry 3 \
+            "${shfmt_release_url}/shfmt_v${SHFMT_VERSION}_linux_amd64" \
+            -o "${download_directory}/shfmt"
+          actionlint_release_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          curl -fsSL --max-time 60 --retry 3 \
+            "${actionlint_release_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o "${download_directory}/actionlint.tar.gz"
+          printf '%s  %s\n' \
+            "${SHELLCHECK_SHA256}" "${download_directory}/shellcheck.tar.xz" \
+            "${SHFMT_SHA256}" "${download_directory}/shfmt" \
+            "${ACTIONLINT_SHA256}" "${download_directory}/actionlint.tar.gz" | sha256sum -c
+          mkdir -p "${tool_directory}"
+          tar -xJf "${download_directory}/shellcheck.tar.xz" -C "${tool_directory}" \
+            --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          mv "${download_directory}/shfmt" "${tool_directory}/shfmt"
+          tar -xzf "${download_directory}/actionlint.tar.gz" -C "${tool_directory}" actionlint
+          chmod 755 "${tool_directory}/shellcheck" "${tool_directory}/shfmt" "${tool_directory}/actionlint"
+          printf '%s\n' "${tool_directory}" >> "${GITHUB_PATH}"
+
+      - name: Lint shell
+        run: bash .githooks/check-shell
