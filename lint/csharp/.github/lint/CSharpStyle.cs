@@ -250,7 +250,8 @@ internal static class CSharpStyle
         foreach (InvocationExpressionSyntax call in tree.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (call.Expression.ToString().StartsWith("Debug.Log", StringComparison.Ordinal)
-                && call.ArgumentList.Arguments.Any(argument => argument.DescendantNodesAndSelf().OfType<MemberAccessExpressionSyntax>().Any(access => access.Name.Identifier.ValueText is "Message")))
+                && call.ArgumentList.Arguments.Any(argument => argument.DescendantNodesAndSelf().OfType<MemberAccessExpressionSyntax>()
+                    .Any(access => access.Name.Identifier.ValueText is "Message" && IsExceptionExpression(access.Expression))))
             {
                 Add(findings, path, call, "CS-14", "log exceptions with Debug.LogException(ex, context)");
             }
@@ -271,6 +272,53 @@ internal static class CSharpStyle
             }
         }
     }
+
+    private static bool IsExceptionExpression(ExpressionSyntax expression) => expression switch
+    {
+        ParenthesizedExpressionSyntax parentheses => IsExceptionExpression(parentheses.Expression),
+        MemberAccessExpressionSyntax { Name.Identifier.ValueText: "InnerException" } inner => IsExceptionExpression(inner.Expression),
+        IdentifierNameSyntax identifier => IsExceptionVariable(identifier),
+        _ => false,
+    };
+
+    private static bool IsExceptionVariable(IdentifierNameSyntax identifier)
+    {
+        string name = identifier.Identifier.ValueText;
+        foreach (SyntaxNode scope in identifier.Ancestors().TakeWhile(node => node is not TypeDeclarationSyntax).Where(IsVariableScope))
+        {
+            if (scope is ForEachStatementSyntax loop && string.Equals(loop.Identifier.ValueText, name, StringComparison.Ordinal))
+            {
+                return IsExceptionType(loop.Type);
+            }
+
+            foreach (SyntaxNode declaration in scope.DescendantNodes(node => node == scope || !IsVariableScope(node)))
+            {
+                switch (declaration)
+                {
+                    case CatchDeclarationSyntax caught when string.Equals(caught.Identifier.ValueText, name, StringComparison.Ordinal):
+                        return true;
+                    case ParameterSyntax parameter when string.Equals(parameter.Identifier.ValueText, name, StringComparison.Ordinal):
+                        return IsExceptionType(parameter.Type);
+                    case VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax variable } local when string.Equals(local.Identifier.ValueText, name, StringComparison.Ordinal):
+                        return IsExceptionType(variable.Type);
+                    case SingleVariableDesignationSyntax pattern when string.Equals(pattern.Identifier.ValueText, name, StringComparison.Ordinal):
+                        return pattern.Parent is DeclarationPatternSyntax typed && IsExceptionType(typed.Type);
+                    default:
+                        break;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsExceptionType(TypeSyntax? type) =>
+        LastName(type is NullableTypeSyntax nullable ? nullable.ElementType : type).EndsWith("Exception", StringComparison.Ordinal);
+
+    private static bool IsVariableScope(SyntaxNode node) =>
+        node is BlockSyntax or CatchClauseSyntax or BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax
+            or AnonymousFunctionExpressionSyntax or ForStatementSyntax or ForEachStatementSyntax or UsingStatementSyntax
+            or SwitchSectionSyntax or SwitchExpressionArmSyntax or TypeDeclarationSyntax;
 
     private static void CheckFrameBody(string path, MethodDeclarationSyntax method, bool isFrame, List<string> findings)
     {

@@ -80,6 +80,105 @@ try {
         }
         Write-Host "ok $name"
     }
+    $unityCases = @(
+        @{
+            Name = 'catch variable'; Finding = $true
+            Code = 'void Run() { try { Work(); } catch (Exception ex) { Debug.LogError(ex.Message); } }'
+        }
+        @{
+            Name = 'catch inner exception'; Finding = $true
+            Code = 'void Run() { try { Work(); } catch (Exception ex) { Debug.LogError(ex.InnerException.Message); } }'
+        }
+        @{
+            Name = 'typed parameter'; Finding = $true
+            Code = 'void Run(System.Exception ex) { Debug.LogError(ex.Message); }'
+        }
+        @{
+            Name = 'pattern variable'; Finding = $true
+            Code = 'void Run(object value) { if (value is IOException io) { Debug.LogError(io.Message); } }'
+        }
+        @{
+            Name = 'record message'; Finding = $false
+            Code = 'void Run(SquishProblem problem) { Debug.LogError(LogPrefix + problem.Message, problem.Context); }'
+        }
+        @{
+            Name = 'log exception'; Finding = $false
+            Code = 'void Run(Exception ex, object context) { Debug.LogException(ex, context); }'
+        }
+        @{
+            Name = 'typed local'; Finding = $true
+            Code = 'void Run() { IOException io = GetError(); Debug.LogWarning(io.Message); }'
+        }
+        @{
+            Name = 'parameter inner exception'; Finding = $true
+            Code = 'void Run(Exception ex) { Debug.LogError(ex.InnerException.Message); }'
+        }
+        @{
+            Name = 'local inner exception'; Finding = $true
+            Code = 'void Run() { Exception ex = GetError(); Debug.LogError(ex.InnerException.Message); }'
+        }
+        @{
+            Name = 'pattern inner exception'; Finding = $true
+            Code = 'void Run(object value) { if (value is IOException io) Debug.LogError(io.InnerException.Message); }'
+        }
+        @{
+            Name = 'record inner exception'; Finding = $false
+            Code = 'void Run(SquishProblem problem) { Debug.LogError(problem.InnerException.Message); }'
+        }
+        @{
+            Name = 'other method parameter'; Finding = $false
+            Code = 'void Other(Exception ex) { Work(); } void Run(SquishProblem ex) { Debug.LogError(ex.Message); }'
+        }
+        @{
+            Name = 'other catch scope'; Finding = $false
+            Code = 'void Run() { try { Work(); } catch (Exception ex) { Work(); } ' +
+            '{ SquishProblem ex = GetProblem(); Debug.LogError(ex.Message); } }'
+        }
+        @{
+            Name = 'inferred local'; Finding = $false
+            Code = 'void Run() { var ex = GetProblem(); Debug.LogError(ex.Message); }'
+        }
+        @{
+            Name = 'exception field'; Finding = $false
+            Code = 'Exception ex; void Run() { Debug.LogError(ex.Message); }'
+        }
+        @{
+            Name = 'nullable parameter'; Finding = $true
+            Code = 'void Run(System.Exception? ex) { if (ex != null) Debug.LogError(ex.Message); }'
+        }
+        @{
+            Name = 'parenthesized exception'; Finding = $true
+            Code = 'void Run(Exception ex) { Debug.LogError((ex).Message); }'
+        }
+        @{
+            Name = 'captured exception'; Finding = $true
+            Code = 'void Run(Exception ex) { Action log = () => Debug.LogError(ex.Message); }'
+        }
+    )
+    foreach ($case in $unityCases) {
+        $index++
+        $root = Join-Path $sandbox "case-$index"
+        $null = [IO.Directory]::CreateDirectory((Join-Path $root '.github/lint'))
+        $null = [IO.Directory]::CreateDirectory((Join-Path $root 'ProjectSettings'))
+        [IO.File]::WriteAllText((Join-Path $root '.github/lint/vendored-paths.txt'), '')
+        [IO.File]::WriteAllText((Join-Path $root 'ProjectSettings/ProjectVersion.txt'), '2022.3.22f1')
+        $code = 'record SquishProblem(string Message, object Context); class Sample { ' + $case.Code + ' }'
+        [IO.File]::WriteAllText((Join-Path $root 'Sample.cs'), $code)
+        $null = & git -C $root init -q
+        if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the Unity test repository.' }
+        $null = & git -C $root add -- .
+        if ($LASTEXITCODE -ne 0) { throw 'Could not index the Unity test source.' }
+        $output = & dotnet $assembly $root 2>&1
+        $exitCode = $LASTEXITCODE
+        $actual = ($output -join "`n").Trim()
+        $expectedCode = if ($case.Finding) { 1 } else { 0 }
+        $diagnostic = '^Sample.cs\(1,\d+\): CS-14 log exceptions with Debug\.LogException\(ex, context\)$'
+        $isMatch = if ($case.Finding) { $actual -cmatch $diagnostic } else { $actual -ceq '' }
+        if ($exitCode -ne $expectedCode -or -not $isMatch) {
+            throw "$($case.Name) expected exit $expectedCode; got exit $exitCode and '$actual'"
+        }
+        Write-Host "ok $($case.Name)"
+    }
     Write-Host "All $index CSharpStyle cases passed."
 } finally {
     $resolvedSandbox = [IO.Path]::GetFullPath($sandbox)
