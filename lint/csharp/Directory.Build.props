@@ -7,6 +7,7 @@
     <AnalysisLevel>latest-all</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
   </PropertyGroup>
 
   <ItemGroup>

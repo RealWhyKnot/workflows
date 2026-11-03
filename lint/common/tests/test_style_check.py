@@ -397,7 +397,10 @@ class CSharpTests(RepoCase):
 
     def test_baseline_props_pass_and_lower_analysis_fails(self) -> None:
         baseline = BASELINE / "csharp" / "Directory.Build.props"
-        self.write("Directory.Build.props", baseline.read_text(encoding="utf-8"))
+        props = baseline.read_text(encoding="utf-8")
+        self.assertIn("<GenerateDocumentationFile>true</GenerateDocumentationFile>", props)
+        self.assertIn("<PublishDocumentationFiles>false</PublishDocumentationFiles>", props)
+        self.write("Directory.Build.props", props)
         self.write(
             "App/App.csproj",
             lines(
