@@ -26,6 +26,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:

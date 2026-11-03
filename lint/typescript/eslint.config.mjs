@@ -47,7 +47,11 @@ const workerEntries = globSync("**/wrangler.{toml,json,jsonc}", { cwd: root, exc
 const toolEntries = ["**/*.config.{js,mjs,cjs,ts,mts,cts}", "**/*.d.ts", ...workerEntries];
 
 const syntax = [
-  { selector: "TSAsExpression[expression.type='ObjectExpression']", message: "Annotate or use satisfies instead of asserting an object literal (TS-4)." },
+  {
+    selector:
+      ":matches(TSAsExpression, TSTypeAssertion)[expression.type='ObjectExpression']:not([typeAnnotation.type='TSTypeReference'][typeAnnotation.typeName.type='Identifier'][typeAnnotation.typeName.name='const'])",
+    message: "Annotate or use satisfies instead of asserting an object literal (TS-4).",
+  },
   {
     selector: "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='Record'][init.type='ObjectExpression']",
     message: "A fixed table is `{ ... } as const satisfies Record<K, V>` (TS-4); runtime keys go in a Map.",
