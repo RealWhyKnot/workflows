@@ -38,7 +38,7 @@ try {
 }
 '@
         [IO.File]::WriteAllText($runner, $script)
-        $node = (Get-Command -Name node -CommandType Application).Source
+        $node = @(Get-Command -Name node -CommandType Application)[0].Source
         $output = & $node $runner $config
         if ($LASTEXITCODE -ne 0) { throw "Config test failed with exit code $LASTEXITCODE" }
         return "$output"

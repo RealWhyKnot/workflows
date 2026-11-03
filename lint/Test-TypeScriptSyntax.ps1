@@ -73,7 +73,7 @@ process.stdout.write(`All ${configs.length * files.length * cases.length} TypeSc
 
 Push-Location -LiteralPath $root
 try {
-    $node = (Get-Command -Name node -CommandType Application).Source
+    $node = @(Get-Command -Name node -CommandType Application)[0].Source
     $script | & $node --input-type=module -
     if ($LASTEXITCODE -ne 0) { throw "TypeScript syntax checks failed with exit code $LASTEXITCODE" }
 } finally {
