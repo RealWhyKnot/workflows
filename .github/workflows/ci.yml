@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
       - name: Test
         shell: pwsh
         run: |

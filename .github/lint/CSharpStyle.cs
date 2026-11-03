@@ -382,12 +382,19 @@ internal static class CSharpStyle
         if (own.Contains("global.json"))
         {
             using var global = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "global.json")));
+            string? implicitPackage = FindSdkImplicitPackage(root, own);
             bool isPinned = global.RootElement.TryGetProperty("sdk", out JsonElement sdk)
                 && sdk.TryGetProperty("version", out JsonElement version) && version.GetString()?.StartsWith("10.", StringComparison.Ordinal) == true
-                && sdk.TryGetProperty("rollForward", out JsonElement roll) && roll.GetString() is "latestFeature";
+                && sdk.TryGetProperty("rollForward", out JsonElement roll)
+                && (implicitPackage is null
+                    ? roll.GetString() is "latestFeature"
+                    : roll.GetString() is "disable" && version.GetString()?.Split('.') is ["10", string minor, string patch]
+                        && minor.Length > 0 && minor.All(char.IsAsciiDigit) && patch.Length > 0 && patch.All(char.IsAsciiDigit));
             if (!isPinned)
             {
-                findings.Add("global.json(1,1): CS-24 pin sdk.version 10.x with rollForward latestFeature");
+                findings.Add(implicitPackage is null
+                    ? "global.json(1,1): CS-24 pin sdk.version 10.x with rollForward latestFeature"
+                    : $"global.json(1,1): CS-24 packages.lock.json has {implicitPackage}; pin the exact SDK with rollForward disable");
             }
         }
 
@@ -397,6 +404,31 @@ internal static class CSharpStyle
             CheckProject(project, xml, findings);
             CheckEntryHooks(project, xml, trees, findings);
         }
+    }
+
+    private static string? FindSdkImplicitPackage(string root, List<string> own)
+    {
+        foreach (string path in own.Where(path => Path.GetFileName(path) is "packages.lock.json"))
+        {
+            using var packages = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, path)));
+            if (!packages.RootElement.TryGetProperty("dependencies", out JsonElement dependencies))
+            {
+                continue;
+            }
+
+            foreach (JsonProperty framework in dependencies.EnumerateObject())
+            {
+                foreach (JsonProperty package in framework.Value.EnumerateObject())
+                {
+                    if (package.Name is "Microsoft.NET.ILLink.Tasks" or "Microsoft.DotNet.ILCompiler")
+                    {
+                        return package.Name;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string Property(XDocument xml, string name) => xml.Descendants(name).LastOrDefault()?.Value.Trim() ?? string.Empty;
