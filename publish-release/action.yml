@@ -1,5 +1,5 @@
 name: Publish release
-description: Create a GitHub release with its assets, optionally draft-first, replacing an existing one, and verifying an uploaded digest.
+description: Create a GitHub release with its assets, optionally draft-first, replacing an existing draft, and verifying an uploaded digest.
 
 inputs:
   tag:
@@ -30,15 +30,15 @@ inputs:
     required: false
     default: "false"
   draft-first:
-    description: Create as a draft, confirm every asset attached, then promote it.
+    description: Create as a draft, check each asset's SHA-256 against the local file, then publish it.
     required: false
     default: "false"
   delete-existing:
-    description: Delete an existing release for the tag before creating it.
+    description: Delete an existing draft for the tag before creating it. Fails if the release is already published.
     required: false
     default: "false"
   verify-asset:
-    description: Asset filename whose digest should be confirmed after upload.
+    description: Asset filename whose digest should be confirmed after upload. With draft-first, the check runs before the draft is published.
     required: false
     default: ""
   verify-sha256:

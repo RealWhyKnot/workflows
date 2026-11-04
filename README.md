@@ -276,9 +276,9 @@ Creates the release, uploads the assets, and can check that the upload worked.
 | `repository`      | calling repo | `owner/name` to publish to                                                                               |
 | `target`          | none         | Commit-ish for the release                                                                               |
 | `prerelease`      | `false`      | Adds `--prerelease --latest=false`                                                                       |
-| `draft-first`     | `false`      | Create a draft, check that all assets are attached, then publish                                         |
-| `delete-existing` | `false`      | If the tag already has a release, delete it first                                                        |
-| `verify-asset`    | none         | Asset whose digest is checked after upload                                                               |
+| `draft-first`     | `false`      | Create a draft, check each asset's SHA-256 against the local file, then publish                          |
+| `delete-existing` | `false`      | If the tag already has a draft, delete it first; fails on a published release                            |
+| `verify-asset`    | none         | Asset whose digest is checked after upload (before publishing, with `draft-first`)                       |
 | `verify-sha256`   | none         | Expected SHA-256 of that asset                                                                           |
 
 Turn on `draft-first` anywhere a failed upload would otherwise leave an empty release published. If
@@ -288,12 +288,20 @@ publishes it the same way.
 With both `verify-asset` and `verify-sha256` set, it polls the API until the uploaded asset's digest
 matches, since an upload can report success before the asset is readable.
 
-To clean up a half-made release, add a step to your workflow that runs on failure.
+A re-run against a published release updates its title and notes and uploads only the assets it
+doesn't have yet. It won't replace an asset that's already there. If the repo has immutable releases
+turned on, use `draft-first`: GitHub locks a release's assets and tag once it's published.
+
+To clean up a half-made draft, add a step to your workflow that runs on failure. Leave published
+releases alone; with immutable releases on, a deleted release's tag can't be used again.
 
 ```yaml
-- name: Remove a partial release
+- name: Remove a partial draft
   if: failure()
-  run: gh release delete ${{ steps.tag.outputs.tag }} --yes 2>$null; $global:LASTEXITCODE = 0
+  run: |
+    $draft = gh release view ${{ steps.tag.outputs.tag }} --json isDraft --jq .isDraft 2>$null
+    if ($draft -eq 'true') { gh release delete ${{ steps.tag.outputs.tag }} --yes 2>$null }
+    $global:LASTEXITCODE = 0
   shell: pwsh
 ```
 
