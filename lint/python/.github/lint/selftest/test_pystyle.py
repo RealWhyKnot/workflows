@@ -263,6 +263,15 @@ class ModuleTest(unittest.TestCase):
         """
         self.assertEqual(run({"firmware/main.py": text}), [])
 
+    def test_yt_dlp_plugins_may_act_on_import(self) -> None:
+        text = """
+        import player_cache
+
+        player_cache.install()
+        """
+        self.assertEqual(run({"runtime/yt_dlp_plugins/extractor/cache.py": text}), [])
+        self.assertEqual(run({"runtime/cache.py": text}), ["runtime/cache.py:4 PY-8"])
+
     def test_ble_waits_need_timeout_ms(self) -> None:
         text = """
         import aioble
