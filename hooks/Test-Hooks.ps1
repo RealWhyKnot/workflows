@@ -175,6 +175,38 @@ if ($bash) {
                 $subject -eq "docs: fresh day ($today.0-$head)") -Detail "got '$subject'"
             Assert -Name 'the new stamp matches the default pattern' -Condition (
                 $subject -match $prepPattern) -Detail "got '$subject'"
+
+            [System.IO.File]::WriteAllText($messageFile, "docs: typed ($stamp)`n")
+            $prepareExit = Invoke-PrepareHook -Message $messageFile -Source 'message'
+            Assert -Name 'prepare rejects a typed stamp outside a rebase' -Condition ($prepareExit -ne 0)
+
+            $hookPath = Join-Path $repo '.githooks/prepare-commit-msg'
+            if ($env:OS -ne 'Windows_NT') { $null = & chmod +x $hookPath }
+            $null = & git config core.hooksPath .githooks
+            $null = & git switch --quiet --create side 2>&1
+            [System.IO.File]::WriteAllText((Join-Path $repo 'side.txt'), "side`n")
+            $null = & git add -- side.txt
+            $null = & git commit --quiet -m 'feat: side' 2>&1
+            $sideSubject = (& git log -1 --format=%s).Trim()
+            Assert -Name 'a hooked commit gets a stamp' -Condition ($sideSubject -match $prepPattern) -Detail (
+                "got '$sideSubject'")
+            $null = & git switch --quiet main 2>&1
+            [System.IO.File]::WriteAllText((Join-Path $repo 'main.txt'), "main`n")
+            $null = & git add -- main.txt
+            $null = & git commit --quiet -m 'feat: main' 2>&1
+            $null = & git rebase --quiet main side 2>&1
+            $rebaseExit = $LASTEXITCODE
+            if ($rebaseExit -ne 0) { $null = & git rebase --abort 2>&1 }
+            $rebased = (& git log -1 --format=%s side).Trim()
+            Assert -Name 'a rebase keeps a stamped subject' -Condition (
+                $rebaseExit -eq 0 -and $rebased -eq $sideSubject) -Detail "exit $rebaseExit, got '$rebased'"
+            $null = & git switch --quiet main 2>&1
+            $null = & git cherry-pick side 2>&1
+            $pickExit = $LASTEXITCODE
+            if ($pickExit -ne 0) { $null = & git cherry-pick --abort 2>&1 }
+            $picked = (& git log -1 --format=%s).Trim()
+            Assert -Name 'a cherry-pick keeps a stamped subject' -Condition (
+                $pickExit -eq 0 -and $picked -eq $sideSubject) -Detail "exit $pickExit, got '$picked'"
         } finally { Pop-Location }
     } finally { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 } else {
