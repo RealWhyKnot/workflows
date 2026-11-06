@@ -1,0 +1,33 @@
+name: Set up PSScriptAnalyzer
+description: Install PSScriptAnalyzer and cache the pwsh compatibility profile the PowerShell lint builds.
+
+inputs:
+  version:
+    description: PSScriptAnalyzer version, major.minor.patch.
+    required: false
+    default: "1.25.0"
+
+outputs:
+  cache-hit:
+    description: "'true' when the compatibility profile came from the cache."
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install PSScriptAnalyzer
+      id: pssa
+      shell: pwsh
+      env:
+        PSSA_VERSION: ${{ inputs.version }}
+      run: |
+        $global:LASTEXITCODE = 0
+        & '${{ github.action_path }}/Install-Pssa.ps1' -Version "$env:PSSA_VERSION"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Cache the compatibility profile
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.pssa.outputs.profile-dir }}
+        key: pssa-profile-${{ runner.os }}-${{ runner.arch }}-${{ steps.pssa.outputs.cache-key }}

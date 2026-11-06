@@ -92,9 +92,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: Install-PSResource -Name PSScriptAnalyzer -Version 1.25.0 -TrustRepository -Quiet
+      - name: Set up PSScriptAnalyzer
+        uses: ./setup-pssa
 
       - name: Lint PowerShell
         shell: pwsh

@@ -34,7 +34,7 @@ what changed.
 | Releases      | [`resolve-tag`](#resolve-tag), [`version-sequence`](#version-sequence), [`release-notes`](#release-notes), [`checksums`](#checksums), [`publish-release`](#publish-release), [`commit-on-branch`](#commit-on-branch) |
 | Nightly betas | [`beta-gate`](#beta-gate), [`nightly-plan`](#nightly-plan), [`wait-for-ci`](#wait-for-ci)                                                                                                                            |
 | Repo checks   | [`commit-subjects`](#commit-subjects), [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance)                                                                                                          |
-| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis)                                                                                                                                                             |
+| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis), [`setup-pssa`](#setup-pssa)                                                                                                                                |
 
 The repo also has my [git hooks](#hooks), [lint baselines](#lint) and a starting
 [Dependabot config](#dependabot).
@@ -618,6 +618,19 @@ version you asked for. Windows only. `version` is major.minor, default `3.12`.
   with:
     version: "3.12"
 ```
+
+### setup-pssa
+
+Installs PSScriptAnalyzer unless that version is already there, and caches the pwsh compatibility
+profile the [PowerShell lint](#lint) builds the first time it runs. Building that profile takes six
+to eight minutes on a Windows runner. `version` is major.minor.patch, default `1.25.0`.
+
+```yaml
+- uses: RealWhyKnot/workflows/setup-pssa@v1
+```
+
+The cache key is the OS, the architecture, pwsh major.minor, the PSScriptAnalyzer version and the
+runner image version. The `cache-hit` output is `true` when the profile came from the cache.
 
 ## Repo files
 
