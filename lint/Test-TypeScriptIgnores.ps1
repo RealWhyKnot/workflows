@@ -21,6 +21,9 @@ const configs = ["eslint.config.mjs"];
 const cases = [
   { path: "eslint-ignore-[x]/sample.ts", ignored: true },
   { path: "eslint-ignore-x/sample.ts", ignored: false },
+  { path: "eslint-ignore-file/skip+(1).ts", ignored: true },
+  { path: "eslint-ignore-file/skip1.ts", ignored: false },
+  { path: "eslint-ignore-file/keep.ts", ignored: false },
   { path: "lint-snippet.ts", ignored: false },
   { path: "tests/lint-snippet.test.ts", ignored: false },
 ];
@@ -43,16 +46,22 @@ process.stdout.write(`All ${configs.length * cases.length} ESLint ignore checks 
 '@
 
 $checkDir = Join-Path $root 'eslint-ignore-[x]'
+$fileDir = Join-Path $root 'eslint-ignore-file'
 $null = New-Item -ItemType Directory -Path $checkDir -Force
+$null = New-Item -ItemType Directory -Path $fileDir -Force
 Push-Location -LiteralPath $root
 try {
     [System.IO.File]::WriteAllText((Join-Path $checkDir '.gitignore'), "*`n")
     [System.IO.File]::WriteAllText((Join-Path $checkDir 'sample.ts'), "export const sample = 1;`n")
+    [System.IO.File]::WriteAllText((Join-Path $fileDir '.gitignore'), "skip+(1).ts`n")
+    [System.IO.File]::WriteAllText((Join-Path $fileDir 'skip+(1).ts'), "export const skip = 1;`n")
+    [System.IO.File]::WriteAllText((Join-Path $fileDir 'keep.ts'), "export const keep = 1;`n")
     $node = @(Get-Command -Name node -CommandType Application)[0].Source
     $script | & $node --input-type=module -
     if ($LASTEXITCODE -ne 0) { throw "ESLint ignore checks failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
     Remove-Item -LiteralPath $checkDir -Recurse -Force
+    Remove-Item -LiteralPath $fileDir -Recurse -Force
 }
 exit 0
