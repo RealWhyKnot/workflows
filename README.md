@@ -684,6 +684,7 @@ with that name at any depth and `/path/` matches from the repo root. You list yo
 upstream folders in `.github/lint/vendored-paths.local.txt`, same format. Install-Lint adds those
 to the excludes in the ruff, pyright, ESLint, Stylelint, Prettier and `.editorconfig` configs it
 installs and in its copy of `vendored-paths.txt`, and treats the result as current on the next run.
+The ESLint config also skips anything git ignores, using `git ls-files --others --ignored`.
 Older installs kept these files at the repo root. Install-Lint moves a root
 `vendored-paths.local.txt` into `.github/lint/` and lists the other old copies for you to delete.
 

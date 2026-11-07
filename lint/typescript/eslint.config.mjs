@@ -2,11 +2,33 @@ import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
 import { defineConfig, globalIgnores } from "eslint/config";
 import globals from "globals";
+import { execFileSync } from "node:child_process";
 import { globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import tseslint from "typescript-eslint";
 
 const root = import.meta.dirname;
+
+const gitIgnored = () => {
+  let listing;
+  try {
+    listing = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+    if (error instanceof Error && "status" in error && error.status === 128) return [];
+    throw error;
+  }
+  return listing
+    .split("\0")
+    .filter(Boolean)
+    .map((file) => file.replaceAll(/[\\*?[\]{}()!+@]/g, "\\$&"));
+};
 
 const load = async (name) => {
   try {
@@ -215,6 +237,7 @@ export default defineConfig(
     "**/.yarn/",
     "**/vendor/",
     "**/third_party/",
+    ...gitIgnored(),
   ]),
   { linterOptions: { noInlineConfig: true } },
   js.configs.recommended,
