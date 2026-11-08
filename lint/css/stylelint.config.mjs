@@ -192,7 +192,7 @@ export default {
       },
     ],
     "selector-max-compound-selectors": 3,
-    "selector-max-specificity": ["0,4,0", { ignoreSelectors: [":not", ":is", ":has", ":where"] }],
+    "selector-max-specificity": "0,4,0",
     "selector-no-qualifying-type": [true, { ignore: ["attribute"] }],
     "max-nesting-depth": [1, { ignoreAtRules: ["media", "supports", "container", "layer"] }],
     "selector-disallowed-list": ["/^:global/"],
