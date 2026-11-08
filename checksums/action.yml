@@ -25,6 +25,10 @@ inputs:
     description: Optional path to write the markdown table to.
     required: false
     default: ""
+  sidecar:
+    description: Set true to also write <archive>.sha256 beside each archive, in sha256sum format.
+    required: false
+    default: "false"
 
 outputs:
   sha256:
@@ -33,6 +37,9 @@ outputs:
   manifests:
     description: Newline-separated paths of the manifests written.
     value: ${{ steps.checksums.outputs.manifests }}
+  sidecars:
+    description: Newline-separated paths of the .sha256 files written.
+    value: ${{ steps.checksums.outputs.sidecars }}
   table:
     description: The markdown table.
     value: ${{ steps.checksums.outputs.table }}
@@ -50,6 +57,7 @@ runs:
         MANIFEST: ${{ inputs.manifest }}
         UNITS: ${{ inputs.units }}
         TABLE_FILE: ${{ inputs.table-file }}
+        SIDECAR: ${{ inputs.sidecar }}
       run: |
         $archives = @($env:ARCHIVES -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $arguments = @{ Archives = $archives; Units = $env:UNITS }
@@ -57,6 +65,7 @@ runs:
         if ($env:MANIFEST_SUFFIX) { $arguments.ManifestSuffix = $env:MANIFEST_SUFFIX }
         if ($env:TABLE_FILE) { $arguments.TableFile = $env:TABLE_FILE }
         if ($env:MANIFEST -eq 'false') { $arguments.NoManifest = $true }
+        if ($env:SIDECAR -eq 'true') { $arguments.Sidecar = $true }
         $global:LASTEXITCODE = 0
         & '${{ github.action_path }}/Write-Checksums.ps1' @arguments
         if ($LASTEXITCODE -ne 0) { throw "checksums failed ($LASTEXITCODE)" }

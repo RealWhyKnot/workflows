@@ -236,11 +236,13 @@ the release notes.
 | `manifest`        | `true`           | `false` returns the table without writing any manifests                                                                                               |
 | `units`           | `MiB`            | `MiB` (1048576 bytes) or `MB` (1000000). The table header says which.                                                                                 |
 | `table-file`      | none             | Also write the table to this path                                                                                                                     |
+| `sidecar`         | `false`          | `true` also writes `<archive>.sha256` next to each archive, in `sha256sum` format with the bare file name                                             |
 
 | output      | description                                  |
 | ----------- | -------------------------------------------- |
 | `sha256`    | SHA-256 of the first archive                 |
 | `manifests` | Paths of the manifests written, one per line |
+| `sidecars`  | Paths of the `.sha256` files, one per line   |
 | `table`     | The Markdown table                           |
 
 A manifest is a tab-separated file with no header and one `hash  bytes  name` line per file, archive

@@ -7,7 +7,8 @@ param(
     [string] $ManifestSuffix = '.integrity.tsv',
     [ValidateSet('MiB', 'MB')][string] $Units = 'MiB',
     [string] $TableFile = '',
-    [switch] $NoManifest
+    [switch] $NoManifest,
+    [switch] $Sidecar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,9 +54,17 @@ $shared = @(Get-ContentRow -Directory $Contents)
 $divisor = if ($Units -eq 'MB') { 1000000 } else { 1048576 }
 $rows = [System.Collections.Generic.List[object]]::new()
 $manifests = [System.Collections.Generic.List[string]]::new()
+$sidecars = [System.Collections.Generic.List[string]]::new()
 foreach ($archive in $resolved) {
     $hash = Get-Sha256 -Path $archive.FullName
     $rows.Add([pscustomobject]@{ Name = $archive.Name; Size = $archive.Length; Hash = $hash })
+
+    if ($Sidecar) {
+        $sidecarPath = $archive.FullName + '.sha256'
+        $sidecarText = "$hash  $($archive.Name)`n"
+        [System.IO.File]::WriteAllText($sidecarPath, $sidecarText, (New-Object System.Text.UTF8Encoding($false)))
+        $sidecars.Add($sidecarPath)
+    }
 
     if (-not $NoManifest) {
         $base = $archive.FullName
@@ -96,6 +105,9 @@ if ($env:GITHUB_OUTPUT) {
     $out.Add("sha256=$($rows[0].Hash)")
     $out.Add("manifests<<$delimiter")
     $out.AddRange($manifests)
+    $out.Add($delimiter)
+    $out.Add("sidecars<<$delimiter")
+    $out.AddRange($sidecars)
     $out.Add($delimiter)
     $out.Add("table<<$delimiter")
     $out.AddRange($table)

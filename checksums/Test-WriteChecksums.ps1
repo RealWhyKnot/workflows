@@ -83,6 +83,34 @@ try {
         'MB is decimal, and the header says so')
     Assert-Substring -Text $mb -Needle '| 0.00 |' -Because 'the size renders to two places'
 
+    Assert-Equal -Actual (Test-Path 'app-1.0.0-win-x64.zip.sha256') -Expected 'False' -Because (
+        'no .sha256 file unless -Sidecar asks for one')
+
+    $null = New-Item -ItemType Directory -Force -Path 'side'
+    [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'side/tool.exe'), $windowsBytes)
+    $null = & $writer -Archives @('side/tool.exe') -Sidecar -NoManifest
+    $sidecarPath = Join-Path $sandbox 'side/tool.exe.sha256'
+    Assert-Equal -Actual (Test-Path $sidecarPath) -Expected 'True' -Because '-Sidecar writes <file>.sha256 beside it'
+    Assert-Equal -Actual ([System.IO.File]::ReadAllText($sidecarPath)) -Expected "$zipHash  tool.exe`n" -Because (
+        'the sidecar is sha256sum format with the bare file name')
+    Assert-Equal -Actual (Test-Path (Join-Path $sandbox 'side/tool.integrity.tsv')) -Expected 'False' -Because (
+        '-NoManifest still skips the manifest when -Sidecar is on')
+    $sideRaw = [System.IO.File]::ReadAllBytes($sidecarPath)
+    Assert-Equal -Actual "$($sideRaw[0] -eq 0xEF)" -Expected 'False' -Because 'the sidecar has no BOM'
+
+    $outputFile = Join-Path $sandbox 'github-output.txt'
+    $previousOutput = $env:GITHUB_OUTPUT
+    try {
+        $env:GITHUB_OUTPUT = $outputFile
+        $null = & $writer -Archives @('side/tool.exe') -Sidecar -NoManifest
+    } finally {
+        $env:GITHUB_OUTPUT = $previousOutput
+    }
+    $outputLines = @([System.IO.File]::ReadAllLines($outputFile))
+    $sidecarsAt = [array]::IndexOf($outputLines, @($outputLines | Where-Object { $_ -like 'sidecars<<*' })[0])
+    Assert-Equal -Actual $outputLines[$sidecarsAt + 1] -Expected $sidecarPath -Because (
+        'the sidecars output lists each .sha256 path')
+
     $null = & $writer -Archives @('app-1.0.0-win-x64.zip') -TableFile 'table.md'
     Assert-Equal -Actual (Test-Path 'table.md') -Expected 'True' -Because '-TableFile writes the markdown out'
 
