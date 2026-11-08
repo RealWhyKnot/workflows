@@ -167,22 +167,23 @@ if ($DeleteExisting -and $hasExistingRelease) {
 }
 
 if ($hasExistingRelease) {
+    if (-not $isExistingDraft) {
+        $missingNames = @(foreach ($asset in $assetList) {
+                $name = Split-Path -Leaf $asset
+                if ($attachedNames -notcontains $name) { $name }
+            })
+        if ($missingNames.Count -gt 0) {
+            $missingText = $missingNames -join ', '
+            throw "Release $Tag is already published without $missingText. Assets only go onto drafts; cut a new tag."
+        }
+    }
+
     $editArgs = @('release', 'edit', $Tag) + $repoArgs + $titleArgs + $prereleaseArgs
     $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun.IsPresent
     if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
 
-    $uploadList = $assetList
-    $clobberArgs = @('--clobber')
-    if (-not $isExistingDraft) {
-        $clobberArgs = @()
-        $uploadList = @(foreach ($asset in $assetList) {
-                $name = Split-Path -Leaf $asset
-                if ($attachedNames -notcontains $name) { $asset; continue }
-                Write-Host "Skipped ${name}: $Tag already has it."
-            })
-    }
-    if ($uploadList.Count -gt 0) {
-        $uploadArgs = @('release', 'upload', $Tag) + $uploadList + $clobberArgs + $repoArgs
+    if ($isExistingDraft -and $assetList.Count -gt 0) {
+        $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber') + $repoArgs
         $null = Invoke-Gh -Arguments $uploadArgs -DryRun $DryRun.IsPresent
         if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     }

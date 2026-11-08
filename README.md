@@ -290,8 +290,9 @@ publishes it the same way.
 With both `verify-asset` and `verify-sha256` set, it polls the API until the uploaded asset's digest
 matches, since an upload can report success before the asset is readable.
 
-A re-run against a published release updates its title and notes and uploads only the assets it
-doesn't have yet. It won't replace an asset that's already there. If the repo has immutable releases
+A re-run against a published release updates its title and notes and leaves its assets alone. If the
+release is missing any of the assets you pass, the step fails before changing anything; publish those
+under a new tag. If the repo has immutable releases
 turned on, use `draft-first`: GitHub locks a release's assets and tag once it's published.
 
 To clean up a half-made draft, add a step to your workflow that runs on failure. Leave published

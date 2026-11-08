@@ -135,16 +135,19 @@ Assert-Plan -Name 'an existing release gets an edit call' -Params ($base + @{
     'gh release edit v2026.9.8.0 --title v2026.9.8.0 --notes-file notes.md'
 ) -NotContains @('gh release create', '--draft')
 
-Assert-Plan -Name 'an existing published release uploads without --clobber' -Params ($base + @{
-        AssumeExisting = $true; Assets = @('a.zip', 'b.tsv')
-    }) -Contains @('gh release upload v2026.9.8.0 a.zip b.tsv') -NotContains @('--clobber')
+$isReleaseDraft = $false
+$failure = Invoke-Publisher -Params @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md'; Assets = @('a.zip', 'b.tsv') }
+$changes = @(foreach ($call in $ghCallLog) { if ($call -match '^release (upload|edit|create|delete)') { $call } })
+Assert-Check -Name 'a published release missing an asset is refused untouched' -Condition (
+    $failure -match 'already published without b\.tsv\.' -and $changes.Count -eq 0
+) -Detail "$failure | $($changes -join ' | ')"
 
 $isReleaseDraft = $false
-$null = Invoke-Publisher -Params @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md'; Assets = @('a.zip', 'b.tsv') }
+$failure = Invoke-Publisher -Params @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md'; Assets = @('a.zip') }
 $uploads = @(foreach ($call in $ghCallLog) { if ($call -match '^release upload') { $call } })
-Assert-Check -Name 'a published release only gets the assets it lacks' -Condition (
-    $uploads.Count -eq 1 -and $uploads[0] -eq 'release upload v2026.9.8.0 b.tsv'
-) -Detail ($uploads -join ' | ')
+Assert-Check -Name 'a published release that has every asset gets no upload' -Condition (
+    -not $failure -and $uploads.Count -eq 0
+) -Detail "$failure | $($uploads -join ' | ')"
 
 Assert-Plan -Name 'an existing release with no assets skips the upload' -Params ($base + @{
         AssumeExisting = $true
@@ -155,9 +158,9 @@ Assert-Plan -Name 'an existing prerelease keeps both prerelease flags on edit' -
     }) -Contains @('gh release edit v2026.9.8.0', '--prerelease', '--latest=false')
 
 Assert-Plan -Name 'an existing release passes the repository to edit and upload' -Params ($base + @{
-        AssumeExisting = $true; Repository = 'o/r'; Assets = @('a.zip')
+        AssumeExisting = $true; AssumeDraft = $true; Repository = 'o/r'; Assets = @('a.zip')
     }) -Contains @(
-    'gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --repo o/r'
+    'gh release edit v2026.9.8.0 --repo o/r', 'gh release upload v2026.9.8.0 a.zip --clobber --repo o/r'
 )
 
 Assert-Plan -Name 'the lookup asks whether the release is still a draft' -Params $base -Contains @(
