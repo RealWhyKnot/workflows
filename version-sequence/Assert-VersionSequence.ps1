@@ -33,7 +33,7 @@ function Get-ExpectedRevision {
 $suffix = if ($PrereleaseSuffix) { "(-(?:$PrereleaseSuffix))?" } else { '' }
 
 $resolvedRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
-Push-Location $resolvedRoot
+Push-Location -LiteralPath $resolvedRoot
 try {
     if ($Tag -notmatch "^v(\d{4})\.(\d+)\.(\d+)\.(\d+)$suffix$") {
         Write-Host "::error::Release tag must be vYYYY.M.D.N with an optional -suffix, got '$Tag'."

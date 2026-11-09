@@ -67,7 +67,7 @@ $script:outFile = Join-Path $sandbox 'out.txt'
 
 try {
     $null = New-Item -ItemType Directory -Path $sandbox -Force
-    Push-Location $sandbox
+    Push-Location -LiteralPath $sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -76,6 +76,7 @@ try {
     Invoke-Git @('add', '-A')
     Invoke-Git @('commit', '-m', 'chore: seed')
     $head = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'git rev-parse HEAD failed' }
     Invoke-Git @('tag', 'v2026.9.8.0')
     Invoke-Git @('tag', 'v2026.9.8.1-beta')
     Invoke-Git @('tag', 'v2026.9.8.2-A1B2')
@@ -122,7 +123,9 @@ try {
     } -Expected @{ tag = 'v2026.9.8.3-rc.1' }
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $sandbox) {
+        Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

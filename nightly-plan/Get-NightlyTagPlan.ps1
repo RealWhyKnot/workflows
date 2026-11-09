@@ -43,10 +43,11 @@ $today = [TimeZoneInfo]::ConvertTimeFromUtc($NowUtc, $zone).ToString('yyyy.M.d')
 $escaped = [regex]::Escape($today)
 $pattern = "^v$escaped\.(\d+)(-.+)?$"
 $highest = -1
-foreach ($existing in @(& git tag --list "v$today.*")) {
-    if ($existing -match $pattern -and [int] $Matches[1] -gt $highest) { $highest = [int] $Matches[1] }
+$existing = @(& git tag --list "v$today.*")
+if ($LASTEXITCODE -ne 0) { throw "Could not list the v$today tags." }
+foreach ($name in $existing) {
+    if ($name -match $pattern -and [int] $Matches[1] -gt $highest) { $highest = [int] $Matches[1] }
 }
-$global:LASTEXITCODE = 0
 
 $next = $highest + 1
 $tag = if ($Suffix) { "v$today.$next-$Suffix" } else { "v$today.$next" }

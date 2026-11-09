@@ -191,7 +191,7 @@ try {
         $ci + "`n      - uses: actions/cache@0123456789abcdef0123456789abcdef01234567`n      - uses: ./local-action`n")
     Assert-Result -Name 'SHA pins and local actions are left alone' -ShouldPass $true -ExpectedText '0 warning(s)'
 } finally {
-    if (Test-Path $base) { Remove-Item $base -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $base) { Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 if ($script:failures -gt 0) {

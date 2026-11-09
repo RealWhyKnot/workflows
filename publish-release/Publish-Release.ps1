@@ -30,6 +30,7 @@ function Invoke-Gh {
     param([string[]] $Arguments, [bool] $DryRun)
     if ($DryRun) { Write-Host "gh $($Arguments -join ' ')"; return '' }
     $output = & gh @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "gh $($Arguments[0..1] -join ' ') failed ($LASTEXITCODE)" }
     return $output
 }
 
@@ -104,17 +105,17 @@ function Publish-Draft {
     if ($Verify) { Assert-AssetDigest @Verify }
     $editArgs = @('release', 'edit', $Tag, '--draft=false') + $RepoArgs
     $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun
-    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit --draft=false failed ($LASTEXITCODE)" }
 }
 
 if (-not $Title) { $Title = $Tag }
 $assetList = @(foreach ($asset in $Assets) {
         if (-not ($asset -and $asset.Trim())) { continue }
-        $entry = $asset.Trim()
-        if ($entry -match '[*?]') {
-            foreach ($file in @(Get-ChildItem -Path $entry -File -ErrorAction SilentlyContinue)) { $file.FullName }
+        $assetPattern = $asset.Trim()
+        if ($assetPattern -match '[*?]') {
+            $found = @(Get-ChildItem -Path $assetPattern -File -ErrorAction SilentlyContinue)
+            foreach ($file in $found) { $file.FullName }
         } else {
-            $entry
+            $assetPattern
         }
     })
 $repoArgs = @(if ($Repository) { '--repo'; $Repository })
@@ -180,12 +181,10 @@ if ($hasExistingRelease) {
 
     $editArgs = @('release', 'edit', $Tag) + $repoArgs + $titleArgs + $prereleaseArgs
     $null = Invoke-Gh -Arguments $editArgs -DryRun $DryRun.IsPresent
-    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release edit failed ($LASTEXITCODE)" }
 
     if ($isExistingDraft -and $assetList.Count -gt 0) {
         $uploadArgs = @('release', 'upload', $Tag) + $assetList + @('--clobber') + $repoArgs
         $null = Invoke-Gh -Arguments $uploadArgs -DryRun $DryRun.IsPresent
-        if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     }
     if ($isExistingDraft) { Publish-Draft @draftArgs; $isDraftChecked = $true }
     Write-Host "Updated the existing release $Tag."
@@ -196,7 +195,6 @@ if ($hasExistingRelease) {
     $prereleaseArgs
 
     $null = Invoke-Gh -Arguments $createArgs -DryRun $DryRun.IsPresent
-    if (-not $DryRun -and $LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
 
     if ($DraftFirst) { Publish-Draft @draftArgs; $isDraftChecked = $true }
 }

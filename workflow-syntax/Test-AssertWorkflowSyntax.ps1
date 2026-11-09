@@ -52,7 +52,7 @@ $sandbox = $script:sandbox
 
 try {
     $null = New-Item -ItemType Directory -Path $sandbox -Force
-    Push-Location $sandbox
+    Push-Location -LiteralPath $sandbox
     Invoke-Git -Arguments @('init', '--initial-branch=main', '--quiet')
     Invoke-Git -Arguments @('config', 'user.name', 'Test')
     Invoke-Git -Arguments @('config', 'user.email', 'test@example.com')
@@ -94,7 +94,7 @@ jobs:
 "@
     Invoke-Git -Arguments @('add', '-A')
     Assert-Result -Name 'a broken inline pwsh block fails' -ShouldPass $false -ExpectedText "step 'A broken pwsh step'"
-    Remove-Item (Join-Path $sandbox '.github/workflows/bad.yml') -Force
+    Remove-Item -LiteralPath (Join-Path $sandbox '.github/workflows/bad.yml') -Force
     Invoke-Git -Arguments @('add', '-A')
 
     Set-File -RelativePath '.github/workflows/sticky.yml' -Content @"
@@ -188,7 +188,9 @@ jobs:
     Assert-Result -Name 'a tolerated native failure with a reset passes' -ShouldPass $true
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $sandbox) {
+        Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) {

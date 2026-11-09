@@ -41,7 +41,7 @@ $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('version-sequence-' + [S
 
 try {
     $null = New-Item -ItemType Directory -Path $sandbox -Force
-    Push-Location $sandbox
+    Push-Location -LiteralPath $sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -93,14 +93,16 @@ try {
 
     $other = Join-Path $sandbox 'sub'
     $null = New-Item -ItemType Directory -Path $other -Force
-    Push-Location $other
+    Push-Location -LiteralPath $other
     Assert-Result -Name 'RepoRoot is honoured from another directory' -Params @{
         Tag = 'v2026.9.9.0'; RepoRoot = $sandbox
     } -ShouldPass $true
     Pop-Location
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $sandbox) {
+        Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) {

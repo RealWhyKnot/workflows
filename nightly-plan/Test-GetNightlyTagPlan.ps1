@@ -60,7 +60,7 @@ $script:outFile = Join-Path $script:sandbox 'out.txt'
 
 try {
     $null = New-Item -ItemType Directory -Path $script:sandbox -Force
-    Push-Location $script:sandbox
+    Push-Location -LiteralPath $script:sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -134,7 +134,9 @@ try {
     } -Expected @{ has_changes = 'true'; next_tag = 'v2026.9.8.5-beta' }
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $script:sandbox) {
+        Remove-Item -LiteralPath $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

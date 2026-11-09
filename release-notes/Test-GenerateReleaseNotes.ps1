@@ -6,6 +6,15 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string[]] $Arguments)
+    $out = & git @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed: $out" }
+    $out | Where-Object { $_ -is [string] }
+}
+
 function Assert-Substring {
     [CmdletBinding()]
     [OutputType([void])]
@@ -52,8 +61,8 @@ function New-Commit {
     param([string] $Subject)
     $name = [System.Guid]::NewGuid().ToString('N')
     [System.IO.File]::WriteAllText((Join-Path $script:sandbox $name), $name + [Environment]::NewLine)
-    git add -A
-    git commit --quiet -m $Subject
+    $null = Invoke-Git @('add', '-A')
+    $null = Invoke-Git @('commit', '--quiet', '-m', $Subject)
 }
 
 function ConvertTo-PageJson {
@@ -85,11 +94,15 @@ function gh {
     $query = $Rest[[array]::IndexOf($Rest, '--jq') + 1]
     if ($ghState.Mode -eq 'fixture') {
         $ghState.Fixture | jq -r $query
+        if ($LASTEXITCODE -ne 0) { throw "jq failed on $query" }
         return
     }
     $pages = if ("$($Rest[1])" -match '/compare/') { $ghState.Pages.compare } else { $ghState.Pages.list }
     if ($Rest -notcontains '--paginate') { $pages = @($pages[0]) }
-    foreach ($page in $pages) { $page | jq -r $query }
+    foreach ($page in $pages) {
+        $page | jq -r $query
+        if ($LASTEXITCODE -ne 0) { throw "jq failed on $query" }
+    }
 }
 
 function Expand-ActionExpression {
@@ -180,21 +193,21 @@ Assert-Equal -Actual (Get-AuthorCredit -Login 'github-actions[bot]' -Name 'githu
 $script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('relnotes-' + [System.Guid]::NewGuid().ToString('N'))
 $sandbox = $script:sandbox
 $null = New-Item -ItemType Directory -Force -Path $sandbox
-Push-Location $sandbox
+Push-Location -LiteralPath $sandbox
 try {
-    git init --quiet --initial-branch=main
-    git config user.email 'test@example.invalid'
-    git config user.name 'Test Person'
-    git config commit.gpgsign false
+    $null = Invoke-Git @('init', '--quiet', '--initial-branch=main')
+    $null = Invoke-Git @('config', 'user.email', 'test@example.invalid')
+    $null = Invoke-Git @('config', 'user.name', 'Test Person')
+    $null = Invoke-Git @('config', 'commit.gpgsign', 'false')
 
     New-Commit -Subject 'feat: the first thing'
-    git tag v2026.1.1.0
+    $null = Invoke-Git @('tag', 'v2026.1.1.0')
     New-Commit -Subject 'fix(scope): repair the thing (2026.1.2.0-AB12)'
     New-Commit -Subject 'feat!: a breaking change'
     New-Commit -Subject 'chore: tidy up'
     New-Commit -Subject 'docs(changelog): auto-append entries [skip changelog]'
     New-Commit -Subject 'Not a conventional subject'
-    git tag v2026.1.2.0
+    $null = Invoke-Git @('tag', 'v2026.1.2.0')
 
     $body = & $generator -Tag v2026.1.2.0 -Repository '' -Title 'Sample v2026.1.2.0' | Out-String
 
@@ -211,9 +224,9 @@ try {
 
     [System.IO.File]::WriteAllText((Join-Path $sandbox 'release-notes.txt'), 'x' + [Environment]::NewLine)
     New-Commit -Subject 'fix: between the stable and the beta'
-    git tag v2026.1.2.1-beta
+    $null = Invoke-Git @('tag', 'v2026.1.2.1-beta')
     New-Commit -Subject 'feat: after the beta'
-    git tag v2026.1.3.0
+    $null = Invoke-Git @('tag', 'v2026.1.3.0')
     $stable = & $generator -Tag v2026.1.3.0 -Repository '' | Out-String
     Assert-Substring -Text $stable -Needle 'between the stable and the beta' -Because (
         'stable notes skip past betas even when a checkout file contains a hyphen')
@@ -221,8 +234,8 @@ try {
     $crlfMessage = Join-Path $sandbox 'crlf-message.txt'
     [System.IO.File]::WriteAllText(
         $crlfMessage, "fix: a subject written with CRLF (2026.1.4.0-CD34)`r`n`r`nA body line.`r`n")
-    git commit --quiet --allow-empty --cleanup=verbatim -F $crlfMessage
-    git tag v2026.1.4.0
+    $null = Invoke-Git @('commit', '--quiet', '--allow-empty', '--cleanup=verbatim', '-F', $crlfMessage)
+    $null = Invoke-Git @('tag', 'v2026.1.4.0')
     $crlfOut = Join-Path $sandbox 'crlf-notes.md'
     $null = & $generator -Tag v2026.1.4.0 -Repository '' -OutFile $crlfOut
     $crlf = [System.IO.File]::ReadAllText($crlfOut)
@@ -271,7 +284,7 @@ try {
     $unicode = "caf$([char]0xE9) menu $([char]0x2014) SteamVR$([char]0x2019)s " +
     "$([char]0x30C8)$([char]0x30E9)$([char]0x30C3)$([char]0x30AB)$([char]0x30FC)"
     New-Commit -Subject "feat: $unicode"
-    git tag v2026.1.5.0
+    $null = Invoke-Git @('tag', 'v2026.1.5.0')
     $consoleEncoding = [Console]::OutputEncoding
     [Console]::OutputEncoding = [System.Text.Encoding]::Latin1
     try {
@@ -325,7 +338,7 @@ try {
 
     New-Commit -Subject 'diag: log the tracker state on start'
     New-Commit -Subject 'style: reformat the settings window'
-    git tag v2026.1.6.0
+    $null = Invoke-Git @('tag', 'v2026.1.6.0')
     $kinds = & $generator -Tag v2026.1.6.0 -Repository '' | Out-String
     Assert-Substring -Text $kinds -Needle "### Changes`n- diag: log the tracker state on start" -Because (
         'diag lands in Changes')
@@ -344,7 +357,11 @@ try {
     $actionNotesPath = Join-Path $actionTemp 'release-notes.md'
     Assert-Equal -Actual "$code" -Expected '0' -Because (
         'the action step runs with apostrophes and non-ASCII text in title and extra')
-    $actionNotes = if (Test-Path $actionNotesPath) { [System.IO.File]::ReadAllText($actionNotesPath) } else { '' }
+    $actionNotes = if (Test-Path -LiteralPath $actionNotesPath) {
+        [System.IO.File]::ReadAllText($actionNotesPath)
+    } else {
+        ''
+    }
     Assert-Substring -Text $actionNotes -Needle "# $actionTitle" -Because 'the title reaches the notes unchanged'
     Assert-Substring -Text $actionNotes -Needle "Needs SteamVR's driver folder. $unicode" -Because (
         'the extra block reaches the notes unchanged')
@@ -354,9 +371,13 @@ try {
     $null = Invoke-ReleaseNotesAction -Temp $actionTemp -With @{
         tag = 'v2026.1.6.0'; repository = ''; 'previous-tag' = ''; title = $injectedTitle; extra = ''
     }
-    Assert-Equal -Actual "$(Test-Path $marker)" -Expected 'False' -Because (
+    Assert-Equal -Actual "$(Test-Path -LiteralPath $marker)" -Expected 'False' -Because (
         'quotes in an input cannot run code in the step')
-    $injectedNotes = if (Test-Path $actionNotesPath) { [System.IO.File]::ReadAllText($actionNotesPath) } else { '' }
+    $injectedNotes = if (Test-Path -LiteralPath $actionNotesPath) {
+        [System.IO.File]::ReadAllText($actionNotesPath)
+    } else {
+        ''
+    }
     Assert-Substring -Text $injectedNotes -Needle "# $injectedTitle" -Because (
         'a quoted input reaches the notes as plain text')
 
@@ -365,7 +386,7 @@ try {
 
     $out = Join-Path $sandbox 'notes.md'
     $null = & $generator -Tag v2026.1.2.0 -Repository '' -OutFile $out
-    if (-not (Test-Path $out)) {
+    if (-not (Test-Path -LiteralPath $out)) {
         Write-Host 'FAIL: -OutFile did not write a file' -ForegroundColor Red
         $script:failures++
     } else {
@@ -380,7 +401,7 @@ try {
     }
 } finally {
     Pop-Location
-    Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''

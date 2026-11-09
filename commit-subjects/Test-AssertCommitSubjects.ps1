@@ -22,7 +22,9 @@ function New-Commit {
     Invoke-Git @('add', '-A')
     $gitArgs = if ($Body) { @('commit', '-m', $Subject, '-m', $Body) } else { @('commit', '-m', $Subject) }
     Invoke-Git $gitArgs
-    return (& git rev-parse HEAD).Trim()
+    $head = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'git rev-parse HEAD failed' }
+    return $head
 }
 
 function Assert-Pass {
@@ -63,7 +65,7 @@ $script:sandbox = Join-Path ([System.IO.Path]::GetTempPath()) $sandboxName
 
 try {
     $null = New-Item -ItemType Directory -Path $script:sandbox -Force
-    Push-Location $script:sandbox
+    Push-Location -LiteralPath $script:sandbox
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -119,6 +121,7 @@ try {
     Invoke-Git @('checkout', '--quiet', 'main')
     Invoke-Git @('merge', '--quiet', '-s', 'ours', 'foreign', '-m', 'chore: absorb foreign history')
     $mergeOurs = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'git rev-parse HEAD failed' }
     Assert-Pass -Name 'foreign commits behind a merge are not validated' -Params @{
         Range = "$revert..$mergeOurs"; CheckConventional = $true
     }
@@ -127,7 +130,9 @@ try {
     } -ExpectedText 'is not a conventional commit'
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $script:sandbox) {
+        Remove-Item -LiteralPath $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) {

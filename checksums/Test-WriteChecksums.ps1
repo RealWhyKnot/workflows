@@ -38,16 +38,16 @@ $writer = Join-Path $PSScriptRoot 'Write-Checksums.ps1'
 $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('checksums-' + [System.Guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Force -Path $sandbox
 $previousDirectory = [System.IO.Directory]::GetCurrentDirectory()
-Push-Location $sandbox
+Push-Location -LiteralPath $sandbox
 [System.IO.Directory]::SetCurrentDirectory($sandbox)
 try {
     $windowsBytes = [byte[]]@(foreach ($position in 1..1024) { $position % 256 })
     $linuxBytes = [byte[]]@(foreach ($position in 1..2048) { $position % 256 })
-    [System.IO.File]::WriteAllBytes('app-1.0.0-win-x64.zip', $windowsBytes)
-    [System.IO.File]::WriteAllBytes('app-1.0.0-linux-x64.tar.gz', $linuxBytes)
+    [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'app-1.0.0-win-x64.zip'), $windowsBytes)
+    [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'app-1.0.0-linux-x64.tar.gz'), $linuxBytes)
     $null = New-Item -ItemType Directory -Force -Path 'payload/nested'
-    [System.IO.File]::WriteAllText('payload/app.exe', 'binary')
-    [System.IO.File]::WriteAllText('payload/nested/data.bin', 'more')
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'payload/app.exe'), 'binary')
+    [System.IO.File]::WriteAllText((Join-Path $sandbox 'payload/nested/data.bin'), 'more')
 
     $zipHash = (Get-FileHash -LiteralPath 'app-1.0.0-win-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
     $table = (& $writer -Archives @('*.zip', '*.tar.gz') -Contents 'payload') -join "`n"
@@ -90,10 +90,12 @@ try {
     [System.IO.File]::WriteAllBytes((Join-Path $sandbox 'side/tool.exe'), $windowsBytes)
     $null = & $writer -Archives @('side/tool.exe') -Sidecar -NoManifest
     $sidecarPath = Join-Path $sandbox 'side/tool.exe.sha256'
-    Assert-Equal -Actual (Test-Path $sidecarPath) -Expected 'True' -Because '-Sidecar writes <file>.sha256 beside it'
+    Assert-Equal -Actual (Test-Path -LiteralPath $sidecarPath) -Expected 'True' -Because (
+        '-Sidecar writes <file>.sha256 beside it')
     Assert-Equal -Actual ([System.IO.File]::ReadAllText($sidecarPath)) -Expected "$zipHash  tool.exe`n" -Because (
         'the sidecar is sha256sum format with the bare file name')
-    Assert-Equal -Actual (Test-Path (Join-Path $sandbox 'side/tool.integrity.tsv')) -Expected 'False' -Because (
+    $manifestPath = Join-Path $sandbox 'side/tool.integrity.tsv'
+    Assert-Equal -Actual (Test-Path -LiteralPath $manifestPath) -Expected 'False' -Because (
         '-NoManifest still skips the manifest when -Sidecar is on')
     $sideRaw = [System.IO.File]::ReadAllBytes($sidecarPath)
     Assert-Equal -Actual "$($sideRaw[0] -eq 0xEF)" -Expected 'False' -Because 'the sidecar has no BOM'
@@ -139,7 +141,7 @@ try {
 } finally {
     [System.IO.Directory]::SetCurrentDirectory($previousDirectory)
     Pop-Location
-    Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''

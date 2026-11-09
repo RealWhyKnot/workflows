@@ -91,7 +91,7 @@ $null = New-Item -ItemType Directory -Path (Join-Path $script:sandbox 'dist') -F
 $zipHash = (Get-FileHash -LiteralPath (Join-Path $script:sandbox 'a.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
 $matchingView = '{"assets":[{"name":"a.zip","digest":"sha256:' + $zipHash + '"}],"isDraft":true}'
 $draftView = $matchingView
-Push-Location $script:sandbox
+Push-Location -LiteralPath $script:sandbox
 
 Assert-Plan -Name 'a plain release names the tag and notes file' -Params $base -Contains @(
     'gh release create v2026.9.8.0', '--title v2026.9.8.0', '--notes-file notes.md'
@@ -292,7 +292,7 @@ Assert-Plan -Name 'literal paths are not globbed' -Params @{
 } -Contains @('create v2026.9.8.0 dist/one.whl --title')
 
 Pop-Location
-Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }
 Write-Host "`nAll checks passed."

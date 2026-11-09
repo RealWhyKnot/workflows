@@ -22,7 +22,7 @@ function New-Repo {
     $script:repoCount++
     $script:repo = Join-Path $script:sandbox "repo$($script:repoCount)"
     $null = New-Item -ItemType Directory -Path $script:repo -Force
-    Push-Location $script:repo
+    Push-Location -LiteralPath $script:repo
     Invoke-Git @('init', '--initial-branch=main', '--quiet')
     Invoke-Git @('config', 'user.name', 'Test')
     Invoke-Git @('config', 'user.email', 'test@example.com')
@@ -181,7 +181,9 @@ try {
     }
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $script:sandbox) {
+        Remove-Item -LiteralPath $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

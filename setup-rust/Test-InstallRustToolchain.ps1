@@ -10,7 +10,7 @@ function Invoke-Install {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param([hashtable] $Params, [hashtable] $Files = @{})
-    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force }
+    if (Test-Path -LiteralPath $script:sandbox) { Remove-Item -LiteralPath $script:sandbox -Recurse -Force }
     $null = New-Item -ItemType Directory -Path $script:sandbox -Force
     foreach ($key in $Files.Keys) {
         $full = Join-Path $script:sandbox $key
@@ -25,7 +25,7 @@ function Invoke-Install {
     if ($Params.ContainsKey('WorkingDirectory')) {
         $parameters.WorkingDirectory = Join-Path $script:sandbox $Params.WorkingDirectory
     }
-    Push-Location $script:sandbox
+    Push-Location -LiteralPath $script:sandbox
     try { $null = & $script:installer @parameters *>&1 } finally { Pop-Location }
     $map = @{}
     foreach ($line in [System.IO.File]::ReadAllLines($out)) {
@@ -108,7 +108,9 @@ try {
         Write-Host "FAIL  the lock file is hashed: got '$($locked.Out['lock-hash'])'"; $script:failures++
     } else { Write-Host 'ok    the lock file is hashed' }
 } finally {
-    if (Test-Path $script:sandbox) { Remove-Item $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $script:sandbox) {
+        Remove-Item -LiteralPath $script:sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

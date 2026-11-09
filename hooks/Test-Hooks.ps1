@@ -6,6 +6,15 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string[]] $Arguments)
+    $out = & git @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed: $out" }
+    $out | Where-Object { $_ -is [string] }
+}
+
 function Assert {
     [CmdletBinding()]
     [OutputType([void])]
@@ -23,10 +32,10 @@ function Invoke-Hook {
     $configFile = Join-Path $script:sandbox 'hook-config'
     if ($Config) {
         [System.IO.File]::WriteAllText($configFile, "$Config`n", (New-Object System.Text.UTF8Encoding($false)))
-    } elseif (Test-Path $configFile) {
-        Remove-Item $configFile -Force
+    } elseif (Test-Path -LiteralPath $configFile) {
+        Remove-Item -LiteralPath $configFile -Force
     }
-    Copy-Item (Join-Path $script:hooksDir 'commit-msg') (Join-Path $script:sandbox 'commit-msg') -Force
+    Copy-Item -LiteralPath (Join-Path $script:hooksDir 'commit-msg') (Join-Path $script:sandbox 'commit-msg') -Force
     $null = & bash (Join-Path $script:sandbox 'commit-msg') $messageFile 2>&1
     return $LASTEXITCODE
 }
@@ -119,14 +128,14 @@ if ($bash) {
             (Invoke-Hook -Subject 'feat: release' -Config "CHECK_CONVENTIONAL=1`nCONVENTIONAL_PATTERN='^ship: '") -ne 0)
         $repo = Join-Path $sandbox 'repo'
         $null = New-Item -ItemType Directory -Path $repo -Force
-        Push-Location $repo
+        Push-Location -LiteralPath $repo
         try {
-            $null = & git init --initial-branch=main --quiet 2>&1
-            $null = & git config user.name 'Test'
-            $null = & git config user.email 'test@example.com'
+            $null = Invoke-Git @('init', '--initial-branch=main', '--quiet')
+            $null = Invoke-Git @('config', 'user.name', 'Test')
+            $null = Invoke-Git @('config', 'user.email', 'test@example.com')
             $null = New-Item -ItemType Directory -Path (Join-Path $repo '.githooks') -Force
             $prepareSource = Join-Path $script:hooksDir 'prepare-commit-msg'
-            Copy-Item $prepareSource (Join-Path $repo '.githooks/prepare-commit-msg') -Force
+            Copy-Item -LiteralPath $prepareSource (Join-Path $repo '.githooks/prepare-commit-msg') -Force
 
             $today = '2026.9.8'
             $stamp = "$today.42-ABCD"
@@ -148,11 +157,12 @@ if ($bash) {
 
             Assert -Name 'the git-dir version file supplies the stamp' -Condition (
                 $subject -eq "docs: sample ($stamp)") -Detail "got '$subject'"
-            Assert -Name 'no root version.txt is created' -Condition (-not (Test-Path (Join-Path $repo 'version.txt')))
-            Assert -Name 'the private version file survives' -Condition (Test-Path $private)
+            $rootVersion = Join-Path $repo 'version.txt'
+            Assert -Name 'no root version.txt is created' -Condition (-not (Test-Path -LiteralPath $rootVersion))
+            Assert -Name 'the private version file survives' -Condition (Test-Path -LiteralPath $private)
 
-            $null = & git commit --allow-empty --quiet -m 'base' 2>&1
-            $prefix = (& git rev-parse HEAD).Trim().Substring(0, 4)
+            $null = Invoke-Git @('commit', '--allow-empty', '--quiet', '-m', 'base')
+            $prefix = (Invoke-Git @('rev-parse', 'HEAD')).Trim().Substring(0, 4)
             $sha1 = [System.Security.Cryptography.SHA1]::Create()
             $candidateNumber = 0
             do {
@@ -164,13 +174,13 @@ if ($bash) {
             } until ($hash.StartsWith($prefix))
             $twin = Join-Path $sandbox 'twin.txt'
             [System.IO.File]::WriteAllText($twin, "$candidateNumber")
-            $null = & git hash-object -w $twin
+            $null = Invoke-Git @('hash-object', '-w', $twin)
             Remove-Item -LiteralPath $private -Force
             [System.IO.File]::WriteAllText($messageFile, "docs: fresh day`n")
             $prepareExit = Invoke-PrepareHook -Message $messageFile
             Assert -Name 'prepare creates a new version successfully' -Condition ($prepareExit -eq 0)
             $subject = ([System.IO.File]::ReadAllText($messageFile) -split "`n")[0].Trim()
-            $head = (& git rev-parse HEAD).Trim().Substring(0, 4).ToUpperInvariant()
+            $head = (Invoke-Git @('rev-parse', 'HEAD')).Trim().Substring(0, 4).ToUpperInvariant()
             Assert -Name 'a new day stamps exactly four hex digits of HEAD' -Condition (
                 $subject -eq "docs: fresh day ($today.0-$head)") -Detail "got '$subject'"
             Assert -Name 'the new stamp matches the default pattern' -Condition (
@@ -181,34 +191,37 @@ if ($bash) {
             Assert -Name 'prepare rejects a typed stamp outside a rebase' -Condition ($prepareExit -ne 0)
 
             $hookPath = Join-Path $repo '.githooks/prepare-commit-msg'
-            if ($env:OS -ne 'Windows_NT') { $null = & chmod +x $hookPath }
-            $null = & git config core.hooksPath .githooks
-            $null = & git switch --quiet --create side 2>&1
+            if ($env:OS -ne 'Windows_NT') {
+                $null = & chmod +x $hookPath
+                if ($LASTEXITCODE -ne 0) { throw "chmod failed on $hookPath" }
+            }
+            $null = Invoke-Git @('config', 'core.hooksPath', '.githooks')
+            $null = Invoke-Git @('switch', '--quiet', '--create', 'side')
             [System.IO.File]::WriteAllText((Join-Path $repo 'side.txt'), "side`n")
-            $null = & git add -- side.txt
-            $null = & git commit --quiet -m 'feat: side' 2>&1
-            $sideSubject = (& git log -1 --format=%s).Trim()
+            $null = Invoke-Git @('add', '--', 'side.txt')
+            $null = Invoke-Git @('commit', '--quiet', '-m', 'feat: side')
+            $sideSubject = (Invoke-Git @('log', '-1', '--format=%s')).Trim()
             Assert -Name 'a hooked commit gets a stamp' -Condition ($sideSubject -match $prepPattern) -Detail (
                 "got '$sideSubject'")
-            $null = & git switch --quiet main 2>&1
+            $null = Invoke-Git @('switch', '--quiet', 'main')
             [System.IO.File]::WriteAllText((Join-Path $repo 'main.txt'), "main`n")
-            $null = & git add -- main.txt
-            $null = & git commit --quiet -m 'feat: main' 2>&1
+            $null = Invoke-Git @('add', '--', 'main.txt')
+            $null = Invoke-Git @('commit', '--quiet', '-m', 'feat: main')
             $null = & git rebase --quiet main side 2>&1
             $rebaseExit = $LASTEXITCODE
-            if ($rebaseExit -ne 0) { $null = & git rebase --abort 2>&1 }
-            $rebased = (& git log -1 --format=%s side).Trim()
+            if ($rebaseExit -ne 0) { $null = Invoke-Git @('rebase', '--abort') }
+            $rebased = (Invoke-Git @('log', '-1', '--format=%s', 'side')).Trim()
             Assert -Name 'a rebase keeps a stamped subject' -Condition (
                 $rebaseExit -eq 0 -and $rebased -eq $sideSubject) -Detail "exit $rebaseExit, got '$rebased'"
-            $null = & git switch --quiet main 2>&1
+            $null = Invoke-Git @('switch', '--quiet', 'main')
             $null = & git cherry-pick side 2>&1
             $pickExit = $LASTEXITCODE
-            if ($pickExit -ne 0) { $null = & git cherry-pick --abort 2>&1 }
-            $picked = (& git log -1 --format=%s).Trim()
+            if ($pickExit -ne 0) { $null = Invoke-Git @('cherry-pick', '--abort') }
+            $picked = (Invoke-Git @('log', '-1', '--format=%s')).Trim()
             Assert -Name 'a cherry-pick keeps a stamped subject' -Condition (
                 $pickExit -eq 0 -and $picked -eq $sideSubject) -Detail "exit $pickExit, got '$picked'"
         } finally { Pop-Location }
-    } finally { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    } finally { Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
 } else {
     Write-Host 'skip  bash not available, hook behaviour not exercised'
 }

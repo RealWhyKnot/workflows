@@ -28,7 +28,8 @@ foreach ($hook in $hooks) {
     $source = Join-Path $PSScriptRoot $hook
     $destination = Join-Path $target $hook
     if ((Test-Path -LiteralPath $destination) -and -not $Force) {
-        $isSame = (Get-FileHash $source -Algorithm SHA256).Hash -eq (Get-FileHash $destination -Algorithm SHA256).Hash
+        $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $isSame = $sourceHash -eq (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
         if (-not $isSame) {
             Write-Host "$hook already exists and differs. Re-run with -Force to replace it."
             continue

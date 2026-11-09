@@ -46,7 +46,7 @@ $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('commit-on-branch-' + [S
 
 try {
     $null = New-Item -ItemType Directory -Path $sandbox -Force
-    Push-Location $sandbox
+    Push-Location -LiteralPath $sandbox
     [System.IO.File]::WriteAllText((Join-Path $sandbox 'CHANGELOG.md'), "# Changelog`nhello`n")
     [System.IO.File]::WriteAllText((Join-Path $sandbox 'wiki.md'), "wiki body`n")
 
@@ -135,7 +135,9 @@ try {
     else { Write-Host 'ok    a genuinely empty array exits cleanly' }
 } finally {
     Pop-Location -ErrorAction SilentlyContinue
-    if (Test-Path $sandbox) { Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $sandbox) {
+        Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }

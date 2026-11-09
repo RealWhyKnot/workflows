@@ -18,6 +18,7 @@ function Invoke-Git {
     [OutputType([object[]])]
     param([string[]] $Arguments)
     $out = & git @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments[0]) failed ($LASTEXITCODE)" }
     return @($out)
 }
 
@@ -182,7 +183,7 @@ foreach ($block in $Extra) {
 $body = ($lines -join "`n").TrimEnd() + "`n"
 if ($OutFile) {
     $dir = Split-Path -Parent $OutFile
-    if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Force -Path $dir }
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Force -Path $dir }
     [System.IO.File]::WriteAllText($OutFile, $body, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Wrote $OutFile"
 } else {

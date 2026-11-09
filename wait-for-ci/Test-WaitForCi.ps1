@@ -75,8 +75,8 @@ function Invoke-Wait {
     }
     $text = @(foreach ($line in (& $script:waiter @waitArgs *>&1)) { "$line" }) -join "`n"
     $code = $LASTEXITCODE
-    $outputs = if (Test-Path $out) { [System.IO.File]::ReadAllText($out) } else { '' }
-    Remove-Item $out -ErrorAction SilentlyContinue
+    $outputs = if (Test-Path -LiteralPath $out) { [System.IO.File]::ReadAllText($out) } else { '' }
+    Remove-Item -LiteralPath $out -ErrorAction SilentlyContinue
     return @{ Code = $code; Text = $text; Outputs = $outputs }
 }
 

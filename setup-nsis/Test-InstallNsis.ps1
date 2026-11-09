@@ -39,8 +39,8 @@ function Invoke-Install {
     $text = ''
     try { $text = (& $script:installer @installArgs *>&1) -join "`n" }
     catch [System.Management.Automation.RuntimeException] { $isSuccess = $false; $text = "$_" }
-    $path = if (Test-Path $pathFile) { [System.IO.File]::ReadAllText($pathFile).Trim() } else { '' }
-    Remove-Item $pathFile -ErrorAction SilentlyContinue
+    $path = if (Test-Path -LiteralPath $pathFile) { [System.IO.File]::ReadAllText($pathFile).Trim() } else { '' }
+    Remove-Item -LiteralPath $pathFile -ErrorAction SilentlyContinue
     return @{ IsSuccess = $isSuccess; Text = $text; Installed = $state.Installed; Path = $path }
 }
 
