@@ -148,7 +148,7 @@ foreach ($name in @('common'; $selected)) {
         if ($parts[0] -eq 'merge') {
             if ($parts.Count -eq 2 -and $key -notin $used) {
                 $entry = @($merges | Where-Object { $_.File -eq $parts[1] } | Select-Object -First 1)
-                $check = @{ Name = $name; Source = $file.FullName; Root = $root; Entry = $null }
+                $check = @{ Name = $name; Source = $file.FullName; Root = $root; Entry = $null; Tracked = $own }
                 if ($entry.Count -gt 0) {
                     $check.Entry = $entry[0]
                 }

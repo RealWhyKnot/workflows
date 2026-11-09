@@ -75,6 +75,21 @@ try {
     $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
     Assert-Check -Name 'shell and CSharp editor sections survive' -Condition (
         $editor.Contains('[[shell]]') -and $editor.Contains('[*.{cs,csx}]'))
+    $lints = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'rust/merge/workspace-lints.toml'))
+    $member = Join-Path $sandbox 'rs/crates/member'
+    $null = [IO.Directory]::CreateDirectory($member)
+    [IO.File]::WriteAllText((Join-Path $sandbox 'rs/Cargo.toml'), "[workspace]`n`n$lints")
+    [IO.File]::WriteAllText((Join-Path $member 'Cargo.toml'), "[lints]`nworkspace = true`n")
+    $null = & git -C $sandbox add -- rs
+    if ($LASTEXITCODE -ne 0) { throw 'Could not index the nested workspace.' }
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'rust', '-Force')
+    Assert-Check -Name 'nested workspace manifests are checked' -Condition (
+        $result.Text.Contains('rs/Cargo.toml has everything') -and -not $result.Text.Contains('is missing.'))
+    Assert-Check -Name 'member manifests are not checked' -Condition (-not $result.Text.Contains('rs/crates'))
+    [IO.File]::WriteAllText((Join-Path $sandbox 'rs/Cargo.toml'), "[workspace]`n")
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'rust', '-Force')
+    Assert-Check -Name 'nested workspace drift is reported' -Condition (
+        $result.Text -match 'rs/Cargo\.toml is missing \d+ settings')
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'unknown')
     Assert-Check -Name 'unknown languages fail' -Condition ($result.Code -ne 0)
 } finally {

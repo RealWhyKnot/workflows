@@ -129,6 +129,38 @@ function Join-Section {
     @{ Text = $builder.ToString(); Conflicts = $conflicts.ToArray() }
 }
 
+function Get-MergeTarget {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string] $Root,
+        [Parameter(Mandatory)][string] $Target,
+        [bool] $Nested,
+        [AllowEmptyCollection()][string[]] $Tracked
+    )
+    if (Test-Path -LiteralPath (Join-Path $Root $Target) -PathType Leaf) {
+        return $Target
+    }
+    if (-not $Nested) {
+        return
+    }
+    $suffix = "/$Target"
+    $found = @($Tracked | Where-Object {
+            $_.EndsWith($suffix, [StringComparison]::Ordinal) -and
+            (Test-Path -LiteralPath (Join-Path $Root $_) -PathType Leaf)
+        })
+    foreach ($path in $found) {
+        $folder = $path.Substring(0, $path.Length - $Target.Length)
+        $outer = @($found | Where-Object {
+                $prefix = $_.Substring(0, $_.Length - $Target.Length)
+                $_ -ne $path -and $folder.StartsWith($prefix, [StringComparison]::Ordinal)
+            })
+        if ($outer.Count -eq 0) {
+            $path
+        }
+    }
+}
+
 function Test-MergeItem {
     [CmdletBinding()]
     [OutputType([bool])]
@@ -136,7 +168,8 @@ function Test-MergeItem {
         [Parameter(Mandatory)][string] $Name,
         [Parameter(Mandatory)][string] $Source,
         [Parameter(Mandatory)][string] $Root,
-        [AllowNull()][hashtable] $Entry
+        [AllowNull()][hashtable] $Entry,
+        [AllowEmptyCollection()][string[]] $Tracked = @()
     )
     $leaf = Split-Path -Leaf $Source
     if ($Entry -and $Entry.ContainsKey('Skip') -and $Entry.Skip) {
@@ -147,8 +180,9 @@ function Test-MergeItem {
     if ($Entry -and $Entry.ContainsKey('Into')) {
         $target = $Entry.Into
     }
-    $path = Join-Path $Root $target
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    $nested = [bool]($Entry -and $Entry.ContainsKey('Nested') -and $Entry.Nested)
+    $targets = @(Get-MergeTarget -Root $Root -Target $target -Nested $nested -Tracked $Tracked)
+    if ($targets.Count -eq 0) {
         if ($Entry) {
             Write-Host "${Name}: $target is missing. Create it with the lines in merge/$leaf."
             return $true
@@ -156,6 +190,25 @@ function Test-MergeItem {
         Write-Host "${Name}: no $target here to check merge/$leaf against. The $Name guide says where it goes."
         return $false
     }
+    $pending = $false
+    foreach ($relative in $targets) {
+        if (Test-MergeFile -Name $Name -Source $Source -Path (Join-Path $Root $relative) -Target $relative) {
+            $pending = $true
+        }
+    }
+    $pending
+}
+
+function Test-MergeFile {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string] $Name,
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $Target
+    )
+    $leaf = Split-Path -Leaf $Source
     $expected = [IO.File]::ReadAllText($Source)
     $actual = [IO.File]::ReadAllText($path)
     if ($leaf.EndsWith('.json')) {
