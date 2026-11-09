@@ -56,7 +56,22 @@ function check_attribute(text, file, line) {
   }
 }
 
+function check_expect(text, line, message) {
+  while (match(text, /\.expect\([[:space:]]*"([^"\\]|\\.)*"[[:space:]]*\)/)) {
+    message = substr(text, RSTART, RLENGTH)
+    text = substr(text, RSTART + RLENGTH)
+    sub(/^\.expect\([[:space:]]*"/, "", message)
+    sub(/"[[:space:]]*\)$/, "", message)
+    if (split(message, words, /[[:space:]]+/) < 4) {
+      report(FILENAME, line, "say in the expect message why the value is always there (RS-8)")
+    }
+  }
+}
+
 function check_line(text, line) {
+  if (!is_test_file && !in_test_module) {
+    check_expect(text, line)
+  }
   if (text ~ /(^|[^a-z_])pub[[:space:]]*(\([[:space:]]*(crate|in[[:space:]][^)]*)[[:space:]]*\))?[[:space:]]+(const[[:space:]]+)?(async[[:space:]]+)?unsafe[[:space:]]+(extern[[:space:]]*("[^"]*"[[:space:]]*)?)?fn[[:space:]]/) {
     report(FILENAME, line, "an unsafe fn is private or pub(super); expose a safe fn instead (RS-2)")
   }
@@ -71,6 +86,12 @@ FNR == 1 {
   }
   attribute = ""
   is_vendored_file = is_vendored(FILENAME)
+  is_test_file = FILENAME ~ /(^|\/)(benches|examples)\// || FILENAME ~ /(^|\/)([^\/]*_)?tests?(\/|\.rs$)/
+  in_test_module = 0
+}
+
+/^[[:space:]]*#\[cfg\(test\)\]/ {
+  in_test_module = 1
 }
 
 is_vendored_file {
