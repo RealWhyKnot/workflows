@@ -20,16 +20,18 @@ if TYPE_CHECKING:
 VENDORED_FILE = "vendored-paths.txt"
 LOCAL_FILE = "vendored-paths.local.txt"
 SEGMENT = r"(?!\.+/)[A-Za-z0-9_.@+-]+/"
-ENTRY = re.compile(rf"/(?:{SEGMENT})+|{SEGMENT}")
+LEAF = r"(?!\.+$)[A-Za-z0-9_.@+-]+"
+ENTRY = re.compile(rf"/(?:{SEGMENT})+|/(?:{SEGMENT})*{LEAF}|{SEGMENT}")
 
 
 @dataclass(frozen=True, slots=True)
 class VendoredPaths:
     names: frozenset[str]
     prefixes: tuple[str, ...]
+    files: frozenset[str]
 
     def covers(self, path: str) -> bool:
-        if path.startswith(self.prefixes):
+        if path in self.files or path.startswith(self.prefixes):
             return True
         return any(part in self.names for part in path.split("/")[:-1])
 
@@ -41,7 +43,9 @@ def read_entries(path: Path) -> list[str]:
         if not entry:
             continue
         if not ENTRY.fullmatch(entry):
-            message = f"{path.name}:{number}: {entry!r} isn't a folder name/ or a /path/ from the repo root"
+            message = (
+                f"{path.name}:{number}: {entry!r} isn't a folder name/, a /path/ or a /path/file from the repo root"
+            )
             raise ValueError(message)
         entries.append(entry)
     return entries
@@ -49,8 +53,10 @@ def read_entries(path: Path) -> list[str]:
 
 def vendored_paths(entries: list[str]) -> VendoredPaths:
     names = {entry.strip("/") for entry in entries if not entry.startswith("/")}
-    prefixes = tuple(entry.lstrip("/") for entry in entries if entry.startswith("/"))
-    return VendoredPaths(frozenset(names), prefixes)
+    rooted = [entry.lstrip("/") for entry in entries if entry.startswith("/")]
+    prefixes = tuple(entry for entry in rooted if entry.endswith("/"))
+    files = frozenset(entry for entry in rooted if not entry.endswith("/"))
+    return VendoredPaths(frozenset(names), prefixes, files)
 
 
 def unfolded(shared: list[str], local: list[str]) -> list[Finding]:

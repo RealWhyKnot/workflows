@@ -8,6 +8,7 @@ function Read-VendoredEntry {
         [Parameter(Mandatory)][string] $Path
     )
     $segment = '(?!\.+/)[A-Za-z0-9_.@+-]+/'
+    $leaf = '(?!\.+$)[A-Za-z0-9_.@+-]+'
     $number = 0
     foreach ($line in [IO.File]::ReadAllLines($Path)) {
         $number++
@@ -15,8 +16,9 @@ function Read-VendoredEntry {
         if (-not $entry) {
             continue
         }
-        if ($entry -cnotmatch "^(?:/(?:$segment)+|$segment)$") {
-            throw "$(Split-Path -Leaf $Path):${number}: '$entry' isn't a folder name/ or a /path/ from the repo root"
+        if ($entry -cnotmatch "^(?:/(?:$segment)+|/(?:$segment)*$leaf|$segment)$") {
+            $message = "isn't a folder name/, a /path/ or a /path/file from the repo root"
+            throw "$(Split-Path -Leaf $Path):${number}: '$entry' $message"
         }
         $entry
     }
@@ -30,7 +32,9 @@ function Get-VendoredPattern {
     )
     $parts = @(foreach ($item in $Entry) {
             $name = [regex]::Escape($item.Trim('/'))
-            if ($item.StartsWith('/')) {
+            if ($item -match '^/.*[^/]$') {
+                "^$name$"
+            } elseif ($item.StartsWith('/')) {
                 "^$name/"
             } else {
                 "(^|/)$name/"
@@ -82,6 +86,23 @@ function Add-SectionItem {
     $Text.Substring(0, $found.Index) + $header + $Text.Substring($found.Index + $found.Length)
 }
 
+function Add-FileSection {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string] $Text,
+        [Parameter(Mandatory)][string[]] $File
+    )
+    $found = [regex]::Match($Text, '(?m)^\[\{[^}\n]*\.yarn\}/\*\*\]\n(?<body>(?:[^\[\n][^\n]*\n)*)')
+    if (-not $found.Success) {
+        throw "The baseline has no [{...,.yarn}/**] section to add the repo's vendored files after."
+    }
+    $glob = if ($File.Count -eq 1) { $File[0] } else { '{' + ($File -join ',') + '}' }
+    $section = "[$glob]`n" + $found.Groups['body'].Value
+    $end = $found.Index + $found.Length
+    $Text.Substring(0, $end) + "`n" + $section + $Text.Substring($end)
+}
+
 function Add-VendoredEntry {
     [CmdletBinding()]
     [OutputType([string])]
@@ -94,17 +115,18 @@ function Add-VendoredEntry {
         return $Text
     }
     $names = @(foreach ($item in $Entry) { if (-not $item.StartsWith('/')) { $item.TrimEnd('/') } })
-    $paths = @(foreach ($item in $Entry) { if ($item.StartsWith('/')) { $item.Trim('/') } })
+    $paths = @(foreach ($item in $Entry) { if ($item -match '^/.*/$') { $item.Trim('/') } })
+    $files = @(foreach ($item in $Entry) { if ($item -match '^/.*[^/]$') { $item.Substring(1) } })
     switch -CaseSensitive ($Key) {
         '.github/lint/vendored-paths.txt' {
             return $Text.TrimEnd("`n") + "`n" + ($Entry -join "`n") + "`n"
         }
         'ruff.toml' {
-            $item = @($names; foreach ($path in $paths) { "./$path" })
+            $item = @($names; foreach ($path in @($paths; $files)) { "./$path" })
             return Add-ListItem -Text $Text -Anchor '.yarn' -Quote '"' -Item $item
         }
         'pyrightconfig.json' {
-            $item = @(foreach ($name in $names) { "**/$name" }; $paths)
+            $item = @(foreach ($name in $names) { "**/$name" }; $paths; $files)
             $config = ConvertFrom-Json -InputObject $Text
             $quoted = @(foreach ($value in @($config.exclude; $item)) {
                     ConvertTo-Json -InputObject $value -Depth 2 -Compress
@@ -120,21 +142,30 @@ function Add-VendoredEntry {
             return $Text.Substring(0, $found.Index) + $replacement + $Text.Substring($found.Index + $found.Length)
         }
         '.prettierignore' {
-            $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "/$path/" })
+            $item = @(
+                foreach ($name in $names) { "**/$name/" }
+                foreach ($path in $paths) { "/$path/" }
+                foreach ($file in $files) { "/$file" }
+            )
             return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Item $item
         }
         'eslint.config.mjs' {
-            $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "$path/" })
+            $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "$path/" }; $files)
             return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Quote '"' -Item $item
         }
         'stylelint.config.mjs' {
-            $item = @(foreach ($name in $names) { "**/$name/**" }; foreach ($path in $paths) { "$path/**" })
+            $item = @(foreach ($name in $names) { "**/$name/**" }; foreach ($path in $paths) { "$path/**" }; $files)
             return Add-ListItem -Text $Text -Anchor '**/.yarn/**' -Quote '"' -Item $item
         }
         '.editorconfig' {
-            $Text = Add-SectionItem -Text $Text -Prefix '' -Item @($names; $paths)
+            if ($names.Count + $paths.Count -gt 0) {
+                $Text = Add-SectionItem -Text $Text -Prefix '' -Item @($names; $paths)
+            }
             if ($names.Count -gt 0) {
                 $Text = Add-SectionItem -Text $Text -Prefix '**/' -Item $names
+            }
+            if ($files.Count -gt 0) {
+                $Text = Add-FileSection -Text $Text -File $files
             }
             return $Text
         }

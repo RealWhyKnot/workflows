@@ -1,0 +1,5 @@
+@{
+    Merge = @(
+        @{ File = '.gitattributes' }
+    )
+}

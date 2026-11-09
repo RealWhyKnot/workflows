@@ -331,6 +331,14 @@ class LayoutTest(unittest.TestCase):
             sources = pystyle.walk(root).sources
             self.assertEqual([path.relative_to(root).as_posix() for path in sources], ["good.py"])
 
+    def test_rooted_file_entries_match_only_that_file(self) -> None:
+        entries = ["/docs/notice.py", "/external/"]
+        self.assertTrue(pystyle.is_vendored("docs/notice.py", entries))
+        self.assertTrue(pystyle.is_vendored("external/a.py", entries))
+        self.assertFalse(pystyle.is_vendored("docs/notice.py.bak", entries))
+        self.assertFalse(pystyle.is_vendored("other/docs/notice.py", entries))
+        self.assertFalse(pystyle.is_vendored("external", entries))
+
     def test_lint_excludes_match_the_vendored_list(self) -> None:
         entries = pystyle.vendored_entries()
         here = Path(pystyle.__file__).resolve().parents[2]

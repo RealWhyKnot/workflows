@@ -5,6 +5,10 @@ BEGIN {
     if (entry == "") {
       continue
     }
+    if (entry ~ /^\/.*[^\/]$/) {
+      files[substr(entry, 2)] = 1
+      continue
+    }
     sub(/\/*$/, "/", entry)
     if (substr(entry, 1, 1) == "/") {
       roots[++root_count] = substr(entry, 2)
@@ -25,6 +29,9 @@ function report(file, line, message) {
 }
 
 function is_vendored(path, position) {
+  if (path in files) {
+    return 1
+  }
   for (position = 1; position <= root_count; position++) {
     if (index(path, roots[position]) == 1) {
       return 1

@@ -40,6 +40,15 @@ try {
     $null = & git -C $sandbox add -- tool.py
     if ($LASTEXITCODE -ne 0) { throw 'Could not index the test source.' }
     $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'a missing .gitattributes is reported' -Condition (
+        $result.Code -eq 1 -and $result.Text.Contains('.gitattributes is missing.'))
+    $common = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'common/merge/.gitattributes'))
+    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), "*.py diff=python`n")
+    $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'a .gitattributes without the line ending default is reported' -Condition (
+        $result.Code -eq 1 -and $result.Text -match '\.gitattributes is missing 1 settings')
+    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $common)
+    $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'auto-detection installs Python' -Condition ($result.Code -eq 0)
     $ruff = Join-Path $sandbox 'ruff.toml'
     Assert-Check -Name 'Python baseline exists' -Condition (Test-Path -LiteralPath $ruff)
@@ -56,12 +65,13 @@ try {
     $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
     Assert-Check -Name 'force replaces drift' -Condition ($result.Code -eq 0)
     $local = Join-Path $sandbox '.github/lint/vendored-paths.local.txt'
-    [IO.File]::WriteAllText($local, "upstream/`n/external/library/`n")
+    [IO.File]::WriteAllText($local, "upstream/`n/external/library/`n/docs/NOTICE.md`n")
     $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
     Assert-Check -Name 'local vendored paths install' -Condition ($result.Code -eq 0)
     $config = [IO.File]::ReadAllText((Join-Path $sandbox 'pyrightconfig.json')) | ConvertFrom-Json
     Assert-Check -Name 'named vendored paths are folded' -Condition ($config.exclude -contains '**/upstream')
     Assert-Check -Name 'rooted vendored paths are folded' -Condition ($config.exclude -contains 'external/library')
+    Assert-Check -Name 'vendored files are folded' -Condition ($config.exclude -contains 'docs/NOTICE.md')
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'folded baselines remain current' -Condition ($result.Code -eq 0)
     [IO.File]::WriteAllText($local, "*.py`n")
@@ -69,12 +79,23 @@ try {
     Assert-Check -Name 'invalid vendored paths fail' -Condition ($result.Code -ne 0)
     [IO.File]::WriteAllText($local, '')
     $attributes = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'shell/merge/.gitattributes'))
-    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $attributes)
+    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $common + $attributes)
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell', '-Force')
     Assert-Check -Name 'multiple languages merge successfully' -Condition ($result.Code -eq 0)
     $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
     Assert-Check -Name 'shell and CSharp editor sections survive' -Condition (
         $editor.Contains('[[shell]]') -and $editor.Contains('[*.{cs,csx}]'))
+    [IO.File]::WriteAllText($local, "/docs/NOTICE.md`n/docs/LICENSE.txt`n")
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell,typescript', '-Force')
+    Assert-Check -Name 'vendored files install with TypeScript' -Condition ($result.Code -eq 0)
+    $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
+    $section = [regex]::Match($editor, '(?m)^\[\{docs/NOTICE\.md,docs/LICENSE\.txt\}\]\n(?<body>(?:[^\[\n][^\n]*\n)*)')
+    $body = $section.Groups['body'].Value
+    Assert-Check -Name 'vendored files get their own editor section' -Condition (
+        $section.Success -and $body.Contains("generated_code = true`n") -and $body.Contains("ignore = true`n"))
+    $ignore = [IO.File]::ReadAllLines((Join-Path $sandbox '.prettierignore'))
+    Assert-Check -Name 'prettierignore keeps vendored files' -Condition ($ignore -contains '/docs/NOTICE.md')
+    [IO.File]::WriteAllText($local, '')
     $lints = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'rust/merge/workspace-lints.toml'))
     $member = Join-Path $sandbox 'rs/crates/member'
     $null = [IO.Directory]::CreateDirectory($member)

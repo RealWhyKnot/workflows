@@ -450,7 +450,7 @@ def is_vendored(relative: str, entries: list[str]) -> bool:
     for entry in entries:
         name = entry.strip("/")
         if entry.startswith("/"):
-            if relative.startswith(name + "/"):
+            if relative.startswith(name + "/") or (not entry.endswith("/") and relative == name):
                 return True
         elif name in parts[:-1]:
             return True
