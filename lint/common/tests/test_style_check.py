@@ -11,7 +11,7 @@ from typing import override
 
 BASELINE = Path(__file__).resolve().parents[2]
 SCRIPT = BASELINE / "common" / ".github" / "lint" / "style_check.py"
-MODULES = ("style_check.py", "style_configs.py", "style_scan.py", "style_sources.py")
+MODULES = ("style_check.py", "style_configs.py", "style_imports.py", "style_scan.py", "style_sources.py")
 VENDORED = SCRIPT.with_name("vendored-paths.txt")
 LOCAL = ".github/lint/vendored-paths.local.txt"
 GIT = shutil.which("git") or "git"
@@ -500,6 +500,56 @@ class CSharpTests(RepoCase):
                 "App/App.csproj:4: project setting loosens the baseline (GEN-4)",
             ]
         )
+
+
+class ImportTests(RepoCase):
+    def test_standard_library_import_in_a_function(self) -> None:
+        self.write(
+            "tool.py",
+            lines("def run() -> None:", "    import json", "    import numpy", "    json.dumps(numpy.zeros(1))"),
+        )
+        self.assert_findings(["tool.py:2: import of json inside a function; it's light (PY-14)"])
+
+    def test_own_modules_are_heavy_only_through_their_imports(self) -> None:
+        self.write("app/__init__.py", "")
+        self.write("app/maths.py", lines("import numpy", "", "ZERO = numpy.zeros(1)"))
+        self.write("app/heavy.py", lines("from app import maths", "", "VALUE = maths.ZERO"))
+        self.write("app/light.py", lines("import json", "", "TEXT = json.dumps([])"))
+        self.write(
+            "app/main.py",
+            lines(
+                "def run() -> None:",
+                "    from . import heavy",
+                "    from .light import TEXT",
+                "    from app import light",
+                "    heavy.VALUE, TEXT, light.TEXT",
+            ),
+        )
+        self.assert_findings(
+            [
+                "app/main.py:3: import of TEXT inside a function; it's light (PY-14)",
+                "app/main.py:4: import of light inside a function; it's light (PY-14)",
+            ]
+        )
+
+    def test_type_checking_imports_and_cycles(self) -> None:
+        self.write("app/__init__.py", "")
+        self.write(
+            "app/first.py",
+            lines(
+                "from typing import TYPE_CHECKING",
+                "",
+                "if TYPE_CHECKING:",
+                "    import numpy",
+                "",
+                "def run() -> None:",
+                "    from app import second",
+                "    second.go()",
+            ),
+        )
+        self.write("app/second.py", lines("from app import first", "", "def go() -> None:", "    first.run()"))
+        self.write("app/third.py", lines("def go() -> None:", "    from app import first", "    first.run()"))
+        self.assert_findings(["app/third.py:2: import of first inside a function; it's light (PY-14)"])
 
 
 if __name__ == "__main__":

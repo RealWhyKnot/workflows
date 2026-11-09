@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from style_configs import LINT_DIR, check_config
+from style_imports import check_imports
 from style_scan import Finding
-from style_sources import check_generated, check_source
+from style_sources import check_generated, check_source, language_of
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -85,6 +86,7 @@ def check_repo(root: Path, vendored: VendoredPaths) -> list[Finding]:
     own = [path for path in tracked_files(root) if not vendored.covers(path)]
     tracked = frozenset(own)
     findings: list[Finding] = []
+    python: dict[str, str] = {}
     for path in own:
         full = root / path
         if not full.is_file():
@@ -97,6 +99,9 @@ def check_repo(root: Path, vendored: VendoredPaths) -> list[Finding]:
             findings.append(Finding(path, 0, f"can't read: {error.strerror}"))
             continue
         findings.extend(check_source(path, text))
+        if language_of(path, text) == "python":
+            python[path] = text
+    findings.extend(check_imports(python))
     return sorted(findings)
 
 
