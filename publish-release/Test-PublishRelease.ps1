@@ -67,6 +67,7 @@ function gh {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]] $Rest)
     $ghCallLog.Add($Rest -join ' ')
     $global:LASTEXITCODE = 0
+    if ($ghFailPattern -and ($Rest -join ' ') -match $ghFailPattern) { $global:LASTEXITCODE = 1; return '' }
     if ($Rest -contains 'id,isDraft,assets') {
         if ($isReleaseDraft) { return '{"id":"RE_1","isDraft":true,"assets":[{"name":"a.zip"}]}' }
         return '{"id":"RE_1","isDraft":false,"assets":[{"name":"a.zip"}]}'
@@ -79,6 +80,7 @@ $script:publisher = Join-Path $PSScriptRoot 'Publish-Release.ps1'
 $script:failures = 0
 $ghCallLog = [System.Collections.Generic.List[string]]::new()
 $isReleaseDraft = $false
+$ghFailPattern = ''
 
 $base = @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
 
@@ -148,6 +150,13 @@ $uploads = @(foreach ($call in $ghCallLog) { if ($call -match '^release upload')
 Assert-Check -Name 'a published release that has every asset gets no upload' -Condition (
     -not $failure -and $uploads.Count -eq 0
 ) -Detail "$failure | $($uploads -join ' | ')"
+
+$ghFailPattern = '^release edit'
+$failure = Invoke-Publisher -Params @{ Tag = 'v2026.9.8.0'; NotesFile = 'notes.md' }
+$ghFailPattern = ''
+Assert-Check -Name 'a failing gh call stops the release' -Condition (
+    $failure -match 'gh release edit failed \(1\)'
+) -Detail $failure
 
 Assert-Plan -Name 'an existing release with no assets skips the upload' -Params ($base + @{
         AssumeExisting = $true

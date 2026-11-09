@@ -87,7 +87,7 @@ CPP_SUPPRESSION = re.compile(
     r"|system_header\b|diag_suppress\b)",
     re.MULTILINE,
 )
-CPP_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+CPP_STRING = re.compile(r"""'(?:[^'\\\n]|\\[^'\n]{1,8})'|"(?:[^"\\\n]|\\.)*\"""")
 GENERATED_NAME = re.compile(r"\.(?:g|g\.i|generated)\.cs$|(?:^|/)TemporaryGeneratedFile_[^/]*\.cs$", re.IGNORECASE)
 DESIGNER_NAME = re.compile(r"\.designer\.cs$", re.IGNORECASE)
 

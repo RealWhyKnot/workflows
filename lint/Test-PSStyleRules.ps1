@@ -8,16 +8,15 @@ Set-StrictMode -Version Latest
 
 function Get-RuleHit {
     [CmdletBinding()]
-    [OutputType([string[]])]
+    [OutputType([string])]
     param([Parameter(Mandatory)][string] $Code)
     $rules = Join-Path $PSScriptRoot 'powershell/.github/lint/PSStyleRules.psm1'
     $records = @(Invoke-ScriptAnalyzer -ScriptDefinition $Code -CustomRulePath $rules)
-    $names = @(foreach ($record in $records) {
-            if ($record.RuleName -match '(StyleExitCode|StyleLiteralPath|StyleRelativePath)$') {
-                $Matches[1]
-            }
-        })
-    $names
+    foreach ($record in $records) {
+        if ($record.RuleName -match '(StyleExitCode|StyleLiteralPath|StyleRelativePath)$') {
+            [string] $Matches[1]
+        }
+    }
 }
 
 $cases = @(
@@ -68,7 +67,7 @@ $cases = @(
         Code   = "foreach (`$r in `$rs) { git fetch `$r }`nif (`$LASTEXITCODE -ne 0) { throw 'x' }`n"
         Expect = @('StyleExitCode')
     }
-    @{ Name = 'an unknown tool counts as native';Code = "notarealtool --flag`n"; Expect = @('StyleExitCode') }
+    @{ Name = 'an unknown tool counts as native'; Code = "notarealtool --flag`n"; Expect = @('StyleExitCode') }
     @{ Name = 'a cmdlet needs no exit check'; Code = "Write-Host 'done'`n"; Expect = @() }
     @{
         Name   = 'a positional path from data'
@@ -81,13 +80,23 @@ $cases = @(
         Code   = "`$found = @(Get-ChildItem -Path `$assetPattern -File)`n"
         Expect = @()
     }
-    @{ Name = 'a literal path';Code = "`$found = Test-Path -LiteralPath `$file`n"; Expect = @() }
+    @{ Name = 'a literal path'; Code = "`$found = Test-Path -LiteralPath `$file`n"; Expect = @() }
     @{ Name = 'a constant path'; Code = "`$found = Test-Path 'C:\Windows'`n"; Expect = @() }
     @{ Name = 'a deliberate wildcard'; Code = "`$items = @(Get-ChildItem `"`$dir/*.ps1`")`n"; Expect = @() }
     @{
         Name   = 'a relative path in a .NET call'
         Code   = "`$text = [IO.File]::ReadAllText('config.json')`n"
         Expect = @('StyleRelativePath')
+    }
+    @{
+        Name   = 'a relative interpolated path in a .NET call'
+        Code   = "`$text = [IO.File]::ReadAllText(`"logs/`$name.txt`")`n"
+        Expect = @('StyleRelativePath')
+    }
+    @{
+        Name   = 'an interpolated path that starts from a variable'
+        Code   = "`$text = [IO.File]::ReadAllText(`"`$root/config.json`")`n"
+        Expect = @()
     }
     @{
         Name   = 'a rooted path in a .NET call'

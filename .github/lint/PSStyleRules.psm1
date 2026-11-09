@@ -392,7 +392,8 @@ function Get-RelativePathRecord {
         return
     }
     $first = $Call.Arguments[0]
-    if ($first -is [StringConstantExpressionAst] -and -not [IO.Path]::IsPathRooted($first.Value)) {
+    $isText = $first -is [StringConstantExpressionAst] -or $first -is [ExpandableStringExpressionAst]
+    if ($isText -and $first.Value -notmatch '^\$' -and -not [IO.Path]::IsPathRooted($first.Value)) {
         New-StyleRecord -Rule 'StyleRelativePath' -Extent $first.Extent -Detail $first.Value
     }
 }

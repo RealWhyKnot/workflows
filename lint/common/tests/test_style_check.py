@@ -163,9 +163,18 @@ class SourceTests(RepoCase):
                 'const char* a = "NOLINT";',
                 'puts("clang-format off \\" NOLINTNEXTLINE");',
                 'const char* b = "x"; // NOLINT',
+                'char c = \'"\'; f("x"); // NOLINT',
+                'char d = \'"\'; puts("NOLINT");',
+                "char e = '\\''; int f = 1'000; // it's NOLINT",
             ),
         )
-        self.assert_findings(["src/a.cpp:3: lint suppression (GEN-4)"])
+        self.assert_findings(
+            [
+                "src/a.cpp:3: lint suppression (GEN-4)",
+                "src/a.cpp:4: lint suppression (GEN-4)",
+                "src/a.cpp:6: lint suppression (GEN-4)",
+            ]
+        )
 
     def test_rust_suppressions_are_found(self) -> None:
         self.write(
