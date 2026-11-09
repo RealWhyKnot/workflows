@@ -105,6 +105,19 @@ def report_unhandled(error_type: type[BaseException], error: BaseException, trac
     sys.stderr.write("Style check failed; fix the error above and run it again.\n")
 
 
+def unslashed(root: Path, path: Path, entries: list[str]) -> list[Finding]:
+    folders = {entry for entry in entries if not entry.endswith("/") and (root / entry.lstrip("/")).is_dir()}
+    if not folders:
+        return []
+    name = path.relative_to(root).as_posix()
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    return [
+        Finding(name, number, f"{line.strip()} is a folder; end it with /")
+        for number, line in enumerate(lines, 1)
+        if line.strip() in folders
+    ]
+
+
 def main() -> int:
     sys.excepthook = report_unhandled
     parser = argparse.ArgumentParser(
@@ -130,6 +143,7 @@ def main() -> int:
     except (subprocess.CalledProcessError, OSError) as error:
         sys.stderr.write(f"can't list the files in {root} with git: {error}\n")
         return 2
+    findings += unslashed(root, local_path, local)
     if list_path.parent == lint:
         findings = sorted(findings + unfolded(shared, local))
     for finding in findings:

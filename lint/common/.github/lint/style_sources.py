@@ -87,6 +87,7 @@ CPP_SUPPRESSION = re.compile(
     r"|system_header\b|diag_suppress\b)",
     re.MULTILINE,
 )
+CPP_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 GENERATED_NAME = re.compile(r"\.(?:g|g\.i|generated)\.cs$|(?:^|/)TemporaryGeneratedFile_[^/]*\.cs$", re.IGNORECASE)
 DESIGNER_NAME = re.compile(r"\.designer\.cs$", re.IGNORECASE)
 
@@ -193,9 +194,10 @@ def check_python(path: str, text: str) -> list[Finding]:
 
 
 def check_cpp(path: str, text: str) -> list[Finding]:
+    code = CPP_STRING.sub('""', text)
     return [
-        Finding(path, text.count("\n", 0, match.start()) + 1, "lint suppression (GEN-4)")
-        for match in CPP_SUPPRESSION.finditer(text)
+        Finding(path, code.count("\n", 0, match.start()) + 1, "lint suppression (GEN-4)")
+        for match in CPP_SUPPRESSION.finditer(code)
     ]
 
 

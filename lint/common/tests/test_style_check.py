@@ -156,6 +156,17 @@ class SourceTests(RepoCase):
             ],
         )
 
+    def test_c_and_cpp_strings_are_not_suppressions(self) -> None:
+        self.write(
+            "src/a.cpp",
+            lines(
+                'const char* a = "NOLINT";',
+                'puts("clang-format off \\" NOLINTNEXTLINE");',
+                'const char* b = "x"; // NOLINT',
+            ),
+        )
+        self.assert_findings(["src/a.cpp:3: lint suppression (GEN-4)"])
+
     def test_rust_suppressions_are_found(self) -> None:
         self.write(
             "src/lib.rs",
@@ -353,6 +364,11 @@ class VendoredPathTests(RepoCase):
                 "other/docs/NOTICE.py:1: comment (GEN-29)",
             ],
         )
+
+    def test_folder_entry_without_slash_is_reported(self) -> None:
+        self.write(LOCAL, lines("/external"))
+        self.write("external/a.py", lines("x = 1"))
+        self.assert_findings([f"{LOCAL}:1: /external is a folder; end it with /"])
 
     def test_bad_local_entry_is_a_setup_error(self) -> None:
         for entry in ("*.cs", "upstream-lib", "a/b/", "/../x/", '"x"/', "/docs/..", "/a//b"):
