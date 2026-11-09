@@ -68,6 +68,20 @@ function check_expect(text, line, message) {
   }
 }
 
+function track_test_item(code, opened, closed) {
+  opened = count(code, "\\{")
+  closed = count(code, "\\}")
+  if (test_depth > 0) {
+    test_depth += opened - closed
+  } else if (test_pending && opened > 0) {
+    test_pending = 0
+    in_test_module = 1
+    test_depth = opened - closed
+  } else if (test_pending && code ~ /;/) {
+    test_pending = 0
+  }
+}
+
 function check_line(text, line) {
   if (!is_test_file && !in_test_module) {
     check_expect(text, line)
@@ -88,10 +102,12 @@ FNR == 1 {
   is_vendored_file = is_vendored(FILENAME)
   is_test_file = FILENAME ~ /(^|\/)(benches|examples)\// || FILENAME ~ /(^|\/)([^\/]*_)?tests?(\/|\.rs$)/
   in_test_module = 0
+  test_pending = 0
+  test_depth = 0
 }
 
 /^[[:space:]]*#\[cfg\(test\)\]/ {
-  in_test_module = 1
+  test_pending = 1
 }
 
 is_vendored_file {
@@ -112,7 +128,11 @@ is_vendored_file {
     check_attribute(attribute, attribute_file, start)
     attribute = ""
   }
+  track_test_item(code)
   check_line($0, FNR)
+  if (test_depth <= 0) {
+    in_test_module = 0
+  }
 }
 
 END {
