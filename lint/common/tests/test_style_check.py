@@ -551,6 +551,63 @@ class ImportTests(RepoCase):
         self.write("app/third.py", lines("def go() -> None:", "    from app import first", "    first.run()"))
         self.assert_findings(["app/third.py:2: import of first inside a function; it's light (PY-14)"])
 
+    def test_a_root_init_file_is_not_a_package_name(self) -> None:
+        self.write("__init__.py", "")
+        self.write("tool.py", lines("def run() -> None:", "    import json", "    json.dumps([])"))
+        self.assert_findings(["tool.py:2: import of json inside a function; it's light (PY-14)"])
+
+    def test_folders_without_init_files_are_own_modules(self) -> None:
+        self.write("tools/common.py", lines("import json", "", "TEXT = json.dumps([])"))
+        self.write("tools/run.py", lines("def run() -> None:", "    from tools import common", "    common.TEXT"))
+        self.assert_findings(["tools/run.py:2: import of common inside a function; it's light (PY-14)"])
+
+    def test_a_file_named_like_a_standard_module_does_not_hide_it(self) -> None:
+        self.write("tools/json.py", lines("import numpy", "", "ZERO = numpy.zeros(1)"))
+        self.write("tools/run.py", lines("def run() -> None:", "    import json", "    json.dumps([])"))
+        self.assert_findings(["tools/run.py:2: import of json inside a function; it's light (PY-14)"])
+
+    def test_the_else_branch_of_a_type_checking_block_runs(self) -> None:
+        self.write("app/__init__.py", "")
+        self.write(
+            "app/heavy.py",
+            lines(
+                "from typing import TYPE_CHECKING",
+                "",
+                "if TYPE_CHECKING:",
+                "    pass",
+                "else:",
+                "    import numpy",
+                "",
+                "    def later() -> None:",
+                "        import json",
+                "        json.dumps([])",
+            ),
+        )
+        self.write("app/main.py", lines("def run() -> None:", "    from app import heavy", "    heavy.later()"))
+        self.assert_findings(["app/heavy.py:9: import of json inside a function; it's light (PY-14)"])
+
+    def test_heaviness_through_a_cycle(self) -> None:
+        self.write("app/__init__.py", "")
+        self.write("app/first.py", lines("from app import second", "import numpy", "", "ZERO = numpy.zeros(1)"))
+        self.write("app/second.py", lines("from app import first", "", "def go() -> None:", "    first.ZERO"))
+        self.write(
+            "app/main.py",
+            lines("def run() -> None:", "    from app import first", "    from app import second", "    second.go()"),
+        )
+        self.assert_clean()
+
+    def test_a_long_import_chain(self) -> None:
+        count = 1200
+        for number in range(count):
+            body = "import numpy" if number == count - 1 else f"from app import m{number + 1}"
+            target = self.root / "app" / f"m{number}.py"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(f"{body}\n".encode())
+        (self.root / "app" / "__init__.py").write_bytes(b"")
+        (self.root / "app" / "main.py").write_bytes(lines("def run() -> None:", "    from app import m0").encode())
+        subprocess.run([GIT, "-C", str(self.root), "add", "app"], check=True, timeout=60)
+        self.assert_clean()
+
 
 if __name__ == "__main__":
     unittest.main()

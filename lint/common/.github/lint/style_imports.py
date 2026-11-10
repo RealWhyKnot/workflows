@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -21,7 +22,7 @@ class LazyImport:
 @dataclass(slots=True)
 class Module:
     path: str
-    name: str
+    names: tuple[str, ...]
     package: str
     eager: list[str] = field(default_factory=list[str])
     lazy: list[LazyImport] = field(default_factory=list[LazyImport])
@@ -34,17 +35,21 @@ def is_type_checking(node: ast.If) -> bool:
     )
 
 
-def module_name(path: str, packages: frozenset[str]) -> tuple[str, str]:
+def module_names(path: str, packages: frozenset[str]) -> tuple[tuple[str, ...], str]:
     pure = PurePosixPath(path)
-    parts: list[str] = []
-    folder = pure.parent
-    while str(folder) in packages:
-        parts.insert(0, folder.name)
-        folder = folder.parent
-    package = ".".join(parts)
-    if pure.stem == "__init__":
-        return package, package
-    return ".".join([*parts, pure.stem]), package
+    folders = pure.parent.parts
+    depth = 0
+    while depth < len(folders) and "/".join(folders[: len(folders) - depth]) in packages:
+        depth += 1
+    package = folders[len(folders) - depth :]
+    stem = () if pure.stem == "__init__" else (pure.stem,)
+    names = dict.fromkeys(".".join((*parts, *stem)) for parts in (package, folders))
+    usable = tuple(
+        name
+        for name in names
+        if name and name not in STANDARD_MODULES and all(part.isidentifier() for part in name.split("."))
+    )
+    return usable, ".".join(package)
 
 
 def resolve(module: Module, node: ast.ImportFrom) -> str:
@@ -55,66 +60,82 @@ def resolve(module: Module, node: ast.ImportFrom) -> str:
     return ".".join([*base, node.module] if node.module else base)
 
 
+def prefixes(name: str) -> list[str]:
+    parts = name.split(".")
+    return [".".join(parts[:end]) for end in range(1, len(parts) + 1)]
+
+
 class Index:
     def __init__(self, modules: list[Module]) -> None:
         self.by_name: dict[str, list[Module]] = {}
+        known: set[str] = set()
         for module in modules:
-            self.by_name.setdefault(module.name, []).append(module)
-        self.heavy: dict[str, bool] = {}
+            for name in module.names:
+                self.by_name.setdefault(name, []).append(module)
+                known.update(prefixes(name))
+        self.known = frozenset(known - STANDARD_MODULES)
+        self.importers: dict[str, set[str]] = {}
+        self.heavy: frozenset[str] = frozenset()
+        self.ancestors: dict[str, frozenset[str]] = {}
 
     def targets(self, module: Module, node: ast.Import | ast.ImportFrom) -> tuple[str, ...]:
         if isinstance(node, ast.Import):
             return tuple(alias.name for alias in node.names)
         base = resolve(module, node)
-        return tuple(f"{base}.{alias.name}" if f"{base}.{alias.name}" in self.by_name else base for alias in node.names)
+        return tuple(f"{base}.{alias.name}" if f"{base}.{alias.name}" in self.known else base for alias in node.names)
 
     def own_prefixes(self, name: str) -> list[str]:
-        parts = name.split(".")
-        return [
-            prefix for prefix in (".".join(parts[: end + 1]) for end in range(len(parts))) if prefix in self.by_name
-        ]
+        return [prefix for prefix in prefixes(name) if prefix in self.known]
+
+    def link(self) -> None:
+        direct: set[str] = set()
+        for name, modules in self.by_name.items():
+            for target in (target for module in modules for target in module.eager):
+                own = self.own_prefixes(target)
+                if not own and target.split(".", maxsplit=1)[0] not in STANDARD_MODULES:
+                    direct.add(name)
+                for prefix in own:
+                    self.importers.setdefault(prefix, set()).add(name)
+        self.heavy = self.spread(direct)
+
+    def spread(self, start: set[str]) -> frozenset[str]:
+        found = set(start)
+        queue = deque(start)
+        while queue:
+            for importer in self.importers.get(queue.popleft(), ()):
+                if importer not in found:
+                    found.add(importer)
+                    queue.append(importer)
+        return frozenset(found)
 
     def is_heavy(self, name: str) -> bool:
         own = self.own_prefixes(name)
         if not own:
             return name.split(".", maxsplit=1)[0] not in STANDARD_MODULES
-        return any(self.is_heavy_module(prefix) for prefix in own)
+        return any(prefix in self.heavy for prefix in own)
 
-    def is_heavy_module(self, name: str) -> bool:
-        if name in self.heavy:
-            return self.heavy[name]
-        self.heavy[name] = False
-        found = any(self.is_heavy(target) for module in self.by_name[name] for target in module.eager)
-        self.heavy[name] = found
-        return found
-
-    def reaches(self, name: str, goal: str, seen: set[str]) -> bool:
-        for prefix in self.own_prefixes(name):
-            if prefix == goal:
-                return True
-            if prefix in seen:
-                continue
-            seen.add(prefix)
-            if any(self.reaches(target, goal, seen) for module in self.by_name[prefix] for target in module.eager):
-                return True
-        return False
+    def reaches(self, name: str, module: Module) -> bool:
+        if module.path not in self.ancestors:
+            self.ancestors[module.path] = self.spread(set(module.names))
+        return any(prefix in self.ancestors[module.path] for prefix in self.own_prefixes(name))
 
 
 def collect(module: Module, index: Index, node: ast.AST, *, lazy: bool) -> None:
+    if isinstance(node, ast.If) and not lazy and is_type_checking(node):
+        for other in node.orelse:
+            collect(module, index, other, lazy=lazy)
+        return
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        targets = index.targets(module, node)
+        if lazy:
+            shown = ", ".join(alias.name for alias in node.names)
+            module.lazy.append(LazyImport(node.lineno, shown, targets))
+        else:
+            module.eager.extend(targets)
+        return
+    inner = lazy or isinstance(node, FUNCTIONS)
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, ast.If) and not lazy and is_type_checking(child):
-            for other in child.orelse:
-                collect(module, index, other, lazy=lazy)
-            continue
-        if isinstance(child, ast.Import | ast.ImportFrom):
-            targets = index.targets(module, child)
-            if lazy:
-                shown = ", ".join(alias.name for alias in child.names)
-                module.lazy.append(LazyImport(child.lineno, shown, targets))
-            else:
-                module.eager.extend(targets)
-            continue
-        collect(module, index, child, lazy=lazy or isinstance(child, FUNCTIONS))
+        collect(module, index, child, lazy=inner)
 
 
 def check_imports(sources: dict[str, str]) -> list[Finding]:
@@ -128,17 +149,16 @@ def check_imports(sources: dict[str, str]) -> list[Finding]:
             trees[path] = ast.parse(text, filename=path)
         except SyntaxError:
             continue
-        name, package = module_name(path, packages)
-        modules.append(Module(path, name, package))
+        names, package = module_names(path, packages)
+        modules.append(Module(path, names, package))
     index = Index(modules)
     for module in modules:
         collect(module, index, trees[module.path], lazy=False)
+    index.link()
     findings: list[Finding] = []
     for module in modules:
         for item in module.lazy:
-            if any(index.is_heavy(target) for target in item.targets):
-                continue
-            if any(index.reaches(target, module.name, set[str]()) for target in item.targets):
+            if any(index.is_heavy(target) or index.reaches(target, module) for target in item.targets):
                 continue
             findings.append(
                 Finding(module.path, item.line, f"import of {item.shown} inside a function; it's light (PY-14)")
