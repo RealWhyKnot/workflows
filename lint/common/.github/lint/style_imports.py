@@ -35,7 +35,7 @@ def is_type_checking(node: ast.If) -> bool:
     )
 
 
-def module_names(path: str, packages: frozenset[str]) -> tuple[tuple[str, ...], str]:
+def read_module(path: str, packages: frozenset[str]) -> Module:
     pure = PurePosixPath(path)
     folders = pure.parent.parts
     depth = 0
@@ -49,7 +49,7 @@ def module_names(path: str, packages: frozenset[str]) -> tuple[tuple[str, ...], 
         for name in names
         if name and name not in STANDARD_MODULES and all(part.isidentifier() for part in name.split("."))
     )
-    return usable, ".".join(package)
+    return Module(path, usable, ".".join(package))
 
 
 def resolve(module: Module, node: ast.ImportFrom) -> str:
@@ -149,8 +149,7 @@ def check_imports(sources: dict[str, str]) -> list[Finding]:
             trees[path] = ast.parse(text, filename=path)
         except SyntaxError:
             continue
-        names, package = module_names(path, packages)
-        modules.append(Module(path, names, package))
+        modules.append(read_module(path, packages))
     index = Index(modules)
     for module in modules:
         collect(module, index, trees[module.path], lazy=False)
