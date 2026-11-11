@@ -312,6 +312,10 @@ export default defineConfig(
     files: ["**/Scripting/lmh.d.ts"],
     rules: { "local/comments": "off" },
   },
+  {
+    files: ["src/types/*.d.ts"],
+    rules: { "@typescript-eslint/consistent-type-definitions": "off", "@typescript-eslint/no-unused-vars": "off" },
+  },
   vue
     ? [
         asErrors(vue.configs["flat/recommended"]),
