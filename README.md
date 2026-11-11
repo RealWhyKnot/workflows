@@ -705,6 +705,10 @@ It also fails if `vendored-paths.local.txt` has an entry the installed `vendored
 because the other configs won't have it either until Install-Lint runs again. Exit code 1 means it
 found something and 2 means it couldn't run, for example because a local entry is badly formatted.
 
+A C# `[SuppressMessage]` you've decided to keep goes in
+`.github/lint/approved-suppressions.local.txt`, one per line as `/path/file RULE`. Each line lets
+one attribute for that rule through in that file. A line that no longer matches one is a finding.
+
 Files directly under `lint/<lang>/merge/` go inside a file your repo already has, like the
 `[workspace.lints]` table in `Cargo.toml`, and Install-Lint lists any line or key that file is
 missing. If the file is missing it's only a note, unless the language's `install.psd1` names it in a

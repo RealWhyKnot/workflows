@@ -14,6 +14,7 @@ SCRIPT = BASELINE / "common" / ".github" / "lint" / "style_check.py"
 MODULES = ("style_check.py", "style_configs.py", "style_imports.py", "style_scan.py", "style_sources.py")
 VENDORED = SCRIPT.with_name("vendored-paths.txt")
 LOCAL = ".github/lint/vendored-paths.local.txt"
+APPROVED = ".github/lint/approved-suppressions.local.txt"
 GIT = shutil.which("git") or "git"
 
 
@@ -236,6 +237,46 @@ class SourceTests(RepoCase):
                 "src/App.cs:8: lint suppression (GEN-4)",
             ]
         )
+
+    def test_approved_suppression_is_let_through_once(self) -> None:
+        self.write(
+            "src/Db.cs",
+            lines(
+                '[SuppressMessage("Security", "CA2100:Review SQL queries")]',
+                "class A { }",
+                '[SuppressMessage("Security", "CA2100:Review SQL queries")]',
+                "class B { }",
+                '[SuppressMessage("Design", "CA1031:Catch specific exceptions", Justification = "see CA2100")]',
+                "class C { }",
+            ),
+        )
+        self.write(APPROVED, lines("/src/Db.cs CA2100"))
+        self.assert_findings(
+            [
+                "src/Db.cs:3: lint suppression (GEN-4)",
+                "src/Db.cs:5: lint suppression (GEN-4)",
+            ]
+        )
+
+    def test_approval_matches_a_wrapped_attribute_and_not_a_pragma(self) -> None:
+        self.write(
+            "src/Db.cs",
+            lines(
+                "#pragma warning disable CA2100",
+                "[SuppressMessage(",
+                '    "Security",',
+                '    "CA2100:Review SQL queries")]',
+                "class A { }",
+            ),
+        )
+        self.write(APPROVED, lines("/src/Db.cs CA2100"))
+        self.assert_findings(["src/Db.cs:1: lint suppression (GEN-4)"])
+
+    def test_stale_approval_is_a_finding(self) -> None:
+        self.write("src/Db.cs", lines("class A { }"))
+        self.write(APPROVED, lines("/src/Db.cs CA2100"))
+        stale = "src/Db.cs has no CA2100 suppression left; remove this line (GEN-4)"
+        self.assert_findings([f"{APPROVED}:1: {stale}"])
 
     def test_licence_header_is_allowed(self) -> None:
         self.write("src/A.cs", lines("// SPDX-License-Identifier: GPL-3.0-or-later", "// Copyright me", "class A { }"))
