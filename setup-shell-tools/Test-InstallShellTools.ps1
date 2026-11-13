@@ -29,6 +29,8 @@ function Invoke-Install {
         Extracted        = [Collections.Generic.List[string]]::new()
         Versions         = [Collections.Generic.List[string]]::new()
         Paths            = [Collections.Generic.List[string]]::new()
+        Files            = @()
+        RunnerOS         = $RunnerOS
         DownloadFailures = $DownloadFailures
         WrongHash        = $WrongHash
         PathFile         = $pathFile
@@ -80,6 +82,7 @@ function Invoke-Install {
         param([string] $Directory, [string] $File)
         if ($File -ne $state.PathFile) { throw "Wrong PATH file: $File" }
         if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { throw 'Missing tool directory.' }
+        $state.Files = @(Get-ChildItem -LiteralPath $Directory -File | Select-Object -ExpandProperty Name | Sort-Object)
         $state.Paths.Add($Directory)
         [IO.File]::AppendAllText($File, $Directory + [Environment]::NewLine)
     }.GetNewClosure()
@@ -129,13 +132,18 @@ function Assert-Install {
         [string] $Contains = ''
     )
     $state = $Result.State
+    $expectedFiles = @(foreach ($tool in $Installed) {
+            if ($state.RunnerOS -eq 'Windows') { "$tool.exe" } else { $tool }
+        })
     $problem = $null
     if ($Result.IsSuccess -ne $IsSuccess) { $problem = "ok was $($Result.IsSuccess)" }
     elseif ($state.Downloads.Count -ne $Downloads) { $problem = "downloads: $($state.Downloads.Count)" }
     elseif ($state.Hashes.Count -ne $Hashes) { $problem = "hash checks: $($state.Hashes.Count)" }
     elseif ($state.Extracted.Count -ne $Extracted) { $problem = "extractions: $($state.Extracted.Count)" }
     elseif (($state.Versions -join ',') -ne ($Installed -join ',')) { $problem = 'installed tools differ' }
-    elseif ($Contains -and -not $Result.Text.Contains($Contains)) { $problem = "missing '$Contains'" }
+    elseif ($IsSuccess -and ($state.Files -join ',') -cne (($expectedFiles | Sort-Object) -join ',')) {
+        $problem = "bin files: $($state.Files -join ',')"
+    } elseif ($Contains -and -not $Result.Text.Contains($Contains)) { $problem = "missing '$Contains'" }
     elseif ($IsSuccess -and ($state.Paths.Count -ne 1 -or $Result.Path -ne $state.Paths[0])) {
         $problem = 'tool directory was not added to PATH once'
     } elseif ($IsSuccess -and -not $Result.Path.StartsWith($Result.Temp + [IO.Path]::DirectorySeparatorChar)) {
