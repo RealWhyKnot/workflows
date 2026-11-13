@@ -251,6 +251,10 @@ class ModuleTest(unittest.TestCase):
             unittest.main()
         """
         self.assertEqual(run({"tests/test_tool.py": text}), [])
+        discarded = text.replace("    unittest.main()", "    _ = unittest.main()")
+        self.assertEqual(run({"tests/test_tool.py": discarded}), [])
+        assigned = text.replace("    unittest.main()", "    result = unittest.main()")
+        self.assertEqual(run({"tests/test_tool.py": assigned}), ["tests/test_tool.py:4 PY-8"])
 
     def test_firmware_may_run_at_boot(self) -> None:
         text = """

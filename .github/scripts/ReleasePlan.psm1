@@ -33,7 +33,7 @@ function Get-ReleaseTag {
     param(
         [Parameter(Mandatory)][string] $Root
     )
-    $releases = foreach ($name in @(Invoke-Git -Root $Root -Arguments @('tag', '--list', 'v*'))) {
+    $releases = foreach ($name in @(Invoke-Git -Root $Root -Arguments @('tag', '--list'))) {
         if ($name -match $script:releasePattern) {
             [pscustomobject]@{
                 Name    = $name
@@ -113,7 +113,7 @@ function Get-DayRevision {
     )
     $pattern = '^v' + [regex]::Escape($Day) + '\.(\d+)(-.+)?$'
     $next = 0
-    foreach ($name in @(Invoke-Git -Root $Root -Arguments @('tag', '--list', "v$Day.*"))) {
+    foreach ($name in @(Invoke-Git -Root $Root -Arguments @('tag', '--list'))) {
         if ($name -match $pattern -and [int]$Matches[1] -ge $next) {
             $next = [int]$Matches[1] + 1
         }

@@ -128,7 +128,7 @@ class ConfigTests(RepoCase):
         copy = self.root / "copy"
         copy.mkdir()
         for name in MODULES:
-            shutil.copy(SCRIPT.with_name(name), copy / name)
+            _ = shutil.copy(SCRIPT.with_name(name), copy / name)
         result = subprocess.run(
             [sys.executable, "-B", str(copy / SCRIPT.name), str(self.root)],
             capture_output=True,
@@ -142,4 +142,4 @@ class ConfigTests(RepoCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    _ = unittest.main()

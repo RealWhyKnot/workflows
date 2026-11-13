@@ -29,22 +29,21 @@ class CheckResult:
 
 
 class RepoCase(unittest.TestCase):
-    @override
-    def setUp(self) -> None:
-        self.folder = tempfile.TemporaryDirectory(prefix="style-check-")
-        self.root = Path(self.folder.name)
-        subprocess.run([GIT, "init", "-q", str(self.root)], check=True, timeout=60)
-        subprocess.run([GIT, "-C", str(self.root), "config", "core.autocrlf", "false"], check=True, timeout=60)
+    root = Path()
 
     @override
-    def tearDown(self) -> None:
-        self.folder.cleanup()
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory(prefix="style-check-")
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        _ = subprocess.run([GIT, "init", "-q", str(self.root)], check=True, timeout=60)
+        _ = subprocess.run([GIT, "-C", str(self.root), "config", "core.autocrlf", "false"], check=True, timeout=60)
 
     def write(self, path: str, text: str) -> None:
         target = self.root / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(text.encode("utf-8"))
-        subprocess.run([GIT, "-C", str(self.root), "add", path], check=True, timeout=60)
+        _ = target.write_bytes(text.encode("utf-8"))
+        _ = subprocess.run([GIT, "-C", str(self.root), "add", path], check=True, timeout=60)
 
     def run_check(self) -> CheckResult:
         result = subprocess.run(
@@ -431,7 +430,7 @@ class VendoredPathTests(RepoCase):
         lint = self.root / ".github" / "lint"
         lint.mkdir(parents=True)
         for name in (*MODULES, VENDORED.name):
-            shutil.copy(SCRIPT.with_name(name), lint / name)
+            _ = shutil.copy(SCRIPT.with_name(name), lint / name)
         self.write(LOCAL, lines("upstream-lib/", "vendor/"))
         self.write("upstream-lib/a.py", lines("# upstream"))
         installed = [sys.executable, "-B", str(lint / SCRIPT.name), str(self.root)]
@@ -442,7 +441,7 @@ class VendoredPathTests(RepoCase):
             f"{LOCAL}: upstream-lib/ isn't in {VENDORED.name} yet. Run Install-Lint again (GEN-1)",
         )
         folded = lint / VENDORED.name
-        folded.write_text(folded.read_text(encoding="utf-8") + "upstream-lib/\n", encoding="utf-8")
+        _ = folded.write_text(folded.read_text(encoding="utf-8") + "upstream-lib/\n", encoding="utf-8")
         result = subprocess.run(installed, capture_output=True, text=True, encoding="utf-8", check=False, timeout=120)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
@@ -547,12 +546,12 @@ class ImportTests(RepoCase):
             body = "import numpy" if number == count - 1 else f"from app import m{number + 1}"
             target = self.root / "app" / f"m{number}.py"
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(f"{body}\n".encode())
-        (self.root / "app" / "__init__.py").write_bytes(b"")
-        (self.root / "app" / "main.py").write_bytes(lines("def run() -> None:", "    from app import m0").encode())
-        subprocess.run([GIT, "-C", str(self.root), "add", "app"], check=True, timeout=60)
+            _ = target.write_bytes(f"{body}\n".encode())
+        _ = (self.root / "app" / "__init__.py").write_bytes(b"")
+        _ = (self.root / "app" / "main.py").write_bytes(lines("def run() -> None:", "    from app import m0").encode())
+        _ = subprocess.run([GIT, "-C", str(self.root), "add", "app"], check=True, timeout=60)
         self.assert_clean()
 
 
 if __name__ == "__main__":
-    unittest.main()
+    _ = unittest.main()
