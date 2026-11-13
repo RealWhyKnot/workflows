@@ -281,7 +281,7 @@ try {
     Assert-NoSubstring -Text $api -Needle '\r' -Because 'no escaped carriage return reaches the notes from the API'
     Assert-NoSubstring -Text $api -Needle '(2026.10.9.0-1528)' -Because 'no build stamp survives in API notes'
 
-    $unicode = "caf$([char]0xE9) menu $([char]0x2014) SteamVR$([char]0x2019)s " +
+    $unicode = "r$([char]0xE9)sum$([char]0xE9) menu $([char]0x2014) SteamVR$([char]0x2019)s " +
     "$([char]0x30C8)$([char]0x30E9)$([char]0x30C3)$([char]0x30AB)$([char]0x30FC)"
     New-Commit -Subject "feat: $unicode"
     $null = Invoke-Git @('tag', 'v2026.1.5.0')

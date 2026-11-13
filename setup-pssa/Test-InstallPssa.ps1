@@ -93,7 +93,10 @@ function Assert-Install {
 
 $script:installer = Join-Path $PSScriptRoot 'Install-Pssa.ps1'
 $script:failures = 0
-$full = @{ 'profile-dir' = 'C:\cache\PSScriptAnalyzer'; 'cache-key' = 'pwsh7.6-pssa1.25.0-win25-20261102.1' }
+$defaultProfile = 'pwsh7.6-pssa1.25.0'
+$olderProfile = 'pwsh7.5-pssa1.26.1'
+$image = 'win25-20261102.1'
+$full = @{ 'profile-dir' = 'C:\cache\PSScriptAnalyzer'; 'cache-key' = "$defaultProfile-$image" }
 
 $result = Invoke-Install
 Assert-Install -Name 'a missing module is installed' -Result $result -IsSuccess $true -Installed @('1.25.0') -Outputs (
@@ -105,11 +108,11 @@ $result = Invoke-Install -Present @('1.24.0')
 Assert-Install -Name 'another version still installs' -Result $result -IsSuccess $true -Installed @('1.25.0')
 $result = Invoke-Install -Params @{ Version = '1.26.1'; Pwsh = [version] '7.5.4' }
 Assert-Install -Name 'the key follows both versions' -Result $result -IsSuccess $true -Installed @('1.26.1') -Outputs @{
-    'cache-key' = 'pwsh7.5-pssa1.26.1-win25-20261102.1'
+    'cache-key' = "$olderProfile-$image"
 }
 $result = Invoke-Install -Params @{ Image = '' }
 Assert-Install -Name 'no image info leaves it out of the key' -Result $result -IsSuccess $true -Installed (
-    @('1.25.0')) -Outputs @{ 'cache-key' = 'pwsh7.6-pssa1.25.0' }
+    @('1.25.0')) -Outputs @{ 'cache-key' = $defaultProfile }
 $result = Invoke-Install -InstallFails $true
 Assert-Install -Name 'a failed install fails' -Result $result -IsSuccess $false -Installed @('1.25.0') -Outputs @{
     'cache-key' = '<none>'

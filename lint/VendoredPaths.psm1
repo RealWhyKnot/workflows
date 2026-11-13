@@ -149,6 +149,18 @@ function Add-VendoredEntry {
             )
             return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Item $item
         }
+        '.github/lint/typos.toml' {
+            $item = @(
+                foreach ($name in $names) { "$name/" }
+                foreach ($path in $paths) { "/$path/" }
+                foreach ($file in $files) { "/$file" }
+            )
+            return Add-ListItem -Text $Text -Anchor '.yarn/' -Quote '"' -Item $item
+        }
+        '.github/lint/gitleaks.toml' {
+            $item = @(foreach ($entry in $Entry) { Get-VendoredPattern -Entry @($entry) })
+            return Add-ListItem -Text $Text -Anchor '(^|/)\.yarn/' -Quote "'''" -Item $item
+        }
         'eslint.config.mjs' {
             $item = @(foreach ($name in $names) { "**/$name/" }; foreach ($path in $paths) { "$path/" }; $files)
             return Add-ListItem -Text $Text -Anchor '**/.yarn/' -Quote '"' -Item $item

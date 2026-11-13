@@ -24,7 +24,7 @@ what changed.
 | [`commit-msg-check.yml`](#commit-msg-checkyml)         | Checks commit subjects for build stamps, and optionally for conventional types and forbidden body text |
 | [`version-guard.yml`](#version-guardyml)               | Fails if a `const string Version` comes back in `Editor/` or `Runtime/`                                |
 | [`dependabot-automerge.yml`](#dependabot-automergeyml) | Auto-merge for the Dependabot updates you allow                                                        |
-| [`repo-checks.yml`](#repo-checksyml)                   | `workflow-syntax`, `conformance` and actionlint                                                        |
+| [`repo-checks.yml`](#repo-checksyml)                   | `workflow-syntax`, `conformance` and the shared repo checks                                            |
 | [`changelog-append.yml`](#changelog-append)            | Runs your changelog script on a push and commits the result as a signed commit                         |
 | [`nightly-beta.yml`](#nightly-beta)                    | Tags a nightly beta when main has changed since the last tag                                           |
 | [`nightly-beta-scripted.yml`](#nightly-beta)           | Same, but your own script picks the tag                                                                |
@@ -34,7 +34,7 @@ what changed.
 | Releases      | [`resolve-tag`](#resolve-tag), [`version-sequence`](#version-sequence), [`release-notes`](#release-notes), [`checksums`](#checksums), [`publish-release`](#publish-release), [`commit-on-branch`](#commit-on-branch) |
 | Nightly betas | [`beta-gate`](#beta-gate), [`nightly-plan`](#nightly-plan), [`wait-for-ci`](#wait-for-ci)                                                                                                                            |
 | Repo checks   | [`commit-subjects`](#commit-subjects), [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance)                                                                                                          |
-| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis), [`setup-pssa`](#setup-pssa), [`setup-shell-tools`](#setup-shell-tools)                                                                                     |
+| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis), [`setup-pssa`](#setup-pssa), [`setup-shell-tools`](#setup-shell-tools), [`setup-lint-tools`](#setup-lint-tools)                                            |
 
 The repo also has my [git hooks](#hooks), [lint baselines](#lint) and a starting
 [Dependabot config](#dependabot).
@@ -107,11 +107,15 @@ Turns on auto-merge for Dependabot PRs whose update type you allow.
 Runs [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance) and actionlint (with
 shellcheck). My repos all call it from CI.
 
-| input               | default | description                                    |
-| ------------------- | ------- | ---------------------------------------------- |
-| `pins`              | `warn`  | Passed to `conformance`                        |
-| `ignore-ecosystems` | none    | Passed to `conformance`                        |
-| `actionlint`        | `true`  | Run actionlint and shellcheck on the workflows |
+If your repo has `.github/lint/repo_checks.sh`, it also runs the shared checks. The workflow installs
+the pinned tools with [`setup-lint-tools`](#setup-lint-tools) first. Reinstall the lint baseline to
+add the runner to an existing repo.
+
+| input               | default | description                                                          |
+| ------------------- | ------- | -------------------------------------------------------------------- |
+| `pins`              | `warn`  | Passed to `conformance`                                              |
+| `ignore-ecosystems` | none    | Passed to `conformance`                                              |
+| `actionlint`        | `true`  | Run actionlint and shellcheck when the shared runner isn't installed |
 
 ## Releases
 
@@ -653,6 +657,19 @@ gets three tries, 30 seconds apart.
 `shellcheck` defaults to `0.11.0` and `shfmt` to `3.14.1`. `actionlint` is skipped unless you set it;
 `1.7.12` is the version it knows. Any other version fails, because the hashes are pinned per version.
 
+### setup-lint-tools
+
+Installs typos 1.52.2, zizmor 1.32.0, gitleaks 8.30.1, cargo-deny 0.20.2 and actionlint 1.7.12 on
+Ubuntu x64. Each release archive is checked against a pinned SHA-256 before extraction. The binaries
+go in the runner's temporary directory and are added to `PATH`.
+
+```yaml
+- uses: RealWhyKnot/workflows/setup-lint-tools@v1
+- run: bash .github/lint/repo_checks.sh
+  env:
+    CI: "true"
+```
+
 ## Repo files
 
 ### hooks
@@ -709,6 +726,9 @@ The ESLint config also skips anything git ignores, using `git ls-files --others 
 Older installs kept these files at the repo root. Install-Lint moves a root
 `vendored-paths.local.txt` into `.github/lint/` and lists the other old copies for you to delete.
 
+Install-Lint also adds vendored paths to the typos and gitleaks configs. Gitleaks keeps its default
+secret-detection rules; only vendored paths are allowed through.
+
 `style_check.py` and the `style_*.py` modules beside it check things the linters can't: comments and
 inline suppressions in Rust, C# and Python; source files over 600 lines; Sass, Less and Stylus
 files; committed generated C#; crates that don't inherit `[workspace.lints]`; lint or format configs
@@ -722,6 +742,12 @@ python -B .github/lint/style_check.py
 It also fails if `vendored-paths.local.txt` has an entry the installed `vendored-paths.txt` lacks,
 because the other configs won't have it either until Install-Lint runs again. Exit code 1 means it
 found something and 2 means it couldn't run, for example because a local entry is badly formatted.
+
+Run `bash .github/lint/repo_checks.sh` from your pre-push hook and CI. It checks spelling, workflows
+and composite actions, secrets, and every Cargo workspace. Set `CI=true` to scan tracked checkout
+files for secrets; hooks scan commits that aren't on any remote. The runner uses typos, actionlint,
+zizmor, gitleaks and cargo-deny from `PATH` and reports missing tools. On Windows Git Bash, set
+`LINT_WSL_DISTRO` to the distro where you installed them.
 
 A C# `[SuppressMessage]` you've decided to keep goes in
 `.github/lint/approved-suppressions.local.txt`, one per line as `/path/file RULE`. Each line lets

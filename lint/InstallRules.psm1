@@ -32,7 +32,7 @@ function Get-FileLanguage {
     }
     $first = ([Text.Encoding]::ASCII.GetString($buffer, 0, $count) -split "`n")[0]
     $interpreter = '^#![ \t]*\S*/(env[ \t]+(-\S+[ \t]+)*)?'
-    if ($first -match ($interpreter + '(ba|da|k|z)?sh\b')) {
+    if ($first -match ($interpreter + '(bash|dash|ksh|zsh|sh)\b')) {
         return 'shell'
     }
     if ($first -match ($interpreter + 'python[0-9.]*\b')) {

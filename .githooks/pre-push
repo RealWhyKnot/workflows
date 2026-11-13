@@ -5,6 +5,7 @@ shopt -s inherit_errexit
 root=$(git rev-parse --show-toplevel)
 cd "${root}"
 uv run --frozen python -B .github/lint/style_check.py
+bash .github/lint/repo_checks.sh
 timeout 600 pwsh -NoProfile -File .github/lint/Invoke-PSLint.ps1
 uv run --frozen ruff format --check .
 uv run --frozen ruff check --ignore-noqa .

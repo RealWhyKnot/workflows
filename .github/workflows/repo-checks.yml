@@ -19,14 +19,17 @@ on:
         required: false
         default: true
 
+permissions:
+  contents: read
+
 jobs:
   checks:
-    name: Workflow syntax, conformance and actionlint
+    name: Repo checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -40,7 +43,18 @@ jobs:
           ignore-ecosystems: ${{ inputs.ignore-ecosystems }}
 
       - name: actionlint
-        if: inputs.actionlint
-        uses: raven-actions/actionlint@v2
+        if: inputs.actionlint && hashFiles('.github/lint/repo_checks.sh') == ''
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
         with:
           shellcheck: true
+
+      - name: Set up lint tools
+        if: hashFiles('.github/lint/repo_checks.sh') != ''
+        uses: RealWhyKnot/workflows/setup-lint-tools@v1
+
+      - name: Run repo checks
+        if: hashFiles('.github/lint/repo_checks.sh') != ''
+        shell: bash
+        env:
+          CI: "true"
+        run: bash .github/lint/repo_checks.sh
