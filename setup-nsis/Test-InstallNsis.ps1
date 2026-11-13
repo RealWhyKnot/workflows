@@ -92,6 +92,10 @@ $result = Invoke-Install -Versions @('', 'v3.12') -InstallFailures 1
 Assert-Install -Name 'a failed install retries and succeeds' -Result $result -IsSuccess $true -Installed (
     @('3.12.0', '3.12.0')) -Contains (
     'Install attempt 1 of 3 failed: choco broke. Retrying in 0 seconds.')
+$result = Invoke-Install -Versions @('', 'v3.12') -InstallFailures 2
+Assert-Install -Name 'a failed install succeeds on the last attempt' -Result $result -IsSuccess $true -Installed (
+    @('3.12.0', '3.12.0', '3.12.0')) -Contains (
+    'Install attempt 2 of 3 failed: choco broke. Retrying in 0 seconds.')
 $result = Invoke-Install -Versions @('') -InstallFails $true -Attempts 1
 Assert-Install -Name 'one attempt fails without retrying' -Result $result -IsSuccess $false -Installed (
     @('3.12.0')) -Contains (
