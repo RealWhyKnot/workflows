@@ -615,6 +615,7 @@ uses `stable`. The cache key is the OS, the toolchain and a hash of `Cargo.lock`
 
 Installs NSIS with Chocolatey and puts it on `PATH`, unless `makensis /VERSION` already reports the
 version you asked for. Windows only. `version` is major.minor, default `3.12`.
+It tries the Chocolatey install three times, 30 seconds apart, before failing.
 
 ```yaml
 - uses: RealWhyKnot/workflows/setup-nsis@v1

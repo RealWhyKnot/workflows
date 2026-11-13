@@ -6,13 +6,17 @@ param(
     [string] $Exe = 'C:\Program Files (x86)\NSIS\makensis.exe',
     [scriptblock] $GetVersion = $null,
     [scriptblock] $Install = $null,
-    [string] $PathFile = $env:GITHUB_PATH
+    [string] $PathFile = $env:GITHUB_PATH,
+    [int] $Attempts = 3,
+    [int] $RetryDelaySeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 if ($Version -notmatch '^\d+\.\d+$') { throw "NSIS version must look like 3.12, got '$Version'." }
+if ($Attempts -lt 1) { throw 'Attempts must be at least 1.' }
+if ($RetryDelaySeconds -lt 0) { throw 'RetryDelaySeconds must be at least 0.' }
 $want = "v$Version"
 
 if (-not $GetVersion) {
@@ -38,7 +42,16 @@ if ($have -eq $want) {
 } else {
     $from = if ($have) { $have } else { 'nothing' }
     Write-Host "Found $from, installing NSIS $want."
-    & $Install "$Version.0"
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            & $Install "$Version.0"
+            break
+        } catch [System.Management.Automation.RuntimeException] {
+            if ($attempt -eq $Attempts) { throw }
+            Write-Host "Install attempt $attempt of $Attempts failed: $_. Retrying in $RetryDelaySeconds seconds."
+            if ($RetryDelaySeconds -gt 0) { Start-Sleep -Seconds $RetryDelaySeconds }
+        }
+    }
     $have = & $GetVersion $Exe
     if ($have -ne $want) { throw "Expected NSIS $want after installing, found '$have'." }
 }

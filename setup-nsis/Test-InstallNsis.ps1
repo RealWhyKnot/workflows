@@ -9,31 +9,35 @@ Set-StrictMode -Version Latest
 function Invoke-Install {
     [CmdletBinding()]
     [OutputType([hashtable])]
-    param([string[]] $Versions, [string] $Version = '3.12', [bool] $InstallFails = $false)
+    param(
+        [string[]] $Versions,
+        [string] $Version = '3.12',
+        [bool] $InstallFails = $false,
+        [int] $InstallFailures = 0,
+        [int] $Attempts = 3,
+        [int] $RetryDelaySeconds = 0
+    )
     $state = @{
-        Seen      = [System.Collections.Generic.Queue[string]]::new([string[]] $Versions)
-        Installed = [System.Collections.Generic.List[string]]::new()
+        Seen            = [System.Collections.Generic.Queue[string]]::new([string[]] $Versions)
+        Installed       = [System.Collections.Generic.List[string]]::new()
+        InstallFails    = $InstallFails
+        InstallFailures = $InstallFailures
     }
     $get = { $state.Seen.Dequeue() }.GetNewClosure()
-    $install = if ($InstallFails) {
-        {
-            param([string] $Package)
-            $state.Installed.Add($Package)
-            throw 'choco broke'
-        }.GetNewClosure()
-    } else {
-        {
-            param([string] $Package)
-            $state.Installed.Add($Package)
-        }.GetNewClosure()
-    }
+    $install = {
+        param([string] $Package)
+        $state.Installed.Add($Package)
+        if ($state.InstallFails -or $state.Installed.Count -le $state.InstallFailures) { throw 'choco broke' }
+    }.GetNewClosure()
     $pathFile = Join-Path ([System.IO.Path]::GetTempPath()) ('setup-nsis-' + [System.Guid]::NewGuid().ToString('N'))
     $installArgs = @{
-        Version    = $Version
-        Exe        = 'C:\NSIS\makensis.exe'
-        GetVersion = $get
-        Install    = $install
-        PathFile   = $pathFile
+        Version           = $Version
+        Exe               = 'C:\NSIS\makensis.exe'
+        GetVersion        = $get
+        Install           = $install
+        PathFile          = $pathFile
+        Attempts          = $Attempts
+        RetryDelaySeconds = $RetryDelaySeconds
     }
     $isSuccess = $true
     $text = ''
@@ -81,7 +85,16 @@ Assert-Install -Name 'a missing install is installed' -Result $result -IsSuccess
     @('3.12.0')) -Contains (
     'Found nothing')
 $result = Invoke-Install -Versions @('', '') -InstallFails $true
-Assert-Install -Name 'a failed install fails' -Result $result -IsSuccess $false -Installed @('3.12.0') -Contains (
+Assert-Install -Name 'a failed install fails' -Result $result -IsSuccess $false -Installed (
+    @('3.12.0', '3.12.0', '3.12.0')) -Contains (
+    'choco broke')
+$result = Invoke-Install -Versions @('', 'v3.12') -InstallFailures 1
+Assert-Install -Name 'a failed install retries and succeeds' -Result $result -IsSuccess $true -Installed (
+    @('3.12.0', '3.12.0')) -Contains (
+    'Install attempt 1 of 3 failed: choco broke. Retrying in 0 seconds.')
+$result = Invoke-Install -Versions @('') -InstallFails $true -Attempts 1
+Assert-Install -Name 'one attempt fails without retrying' -Result $result -IsSuccess $false -Installed (
+    @('3.12.0')) -Contains (
     'choco broke')
 $result = Invoke-Install -Versions @('', 'v3.11')
 Assert-Install -Name ('the wrong version after installing fails') -Result $result -IsSuccess $false -Installed (
@@ -90,6 +103,12 @@ Assert-Install -Name ('the wrong version after installing fails') -Result $resul
 $result = Invoke-Install -Versions @() -Version '3.12.0'
 Assert-Install -Name 'a malformed version is rejected' -Result $result -IsSuccess $false -Installed @() -Contains (
     'must look like 3.12')
+$result = Invoke-Install -Versions @() -Attempts 0
+Assert-Install -Name 'zero attempts is rejected' -Result $result -IsSuccess $false -Installed @() -Contains (
+    'Attempts must be at least 1')
+$result = Invoke-Install -Versions @() -RetryDelaySeconds -1
+Assert-Install -Name 'a negative retry delay is rejected' -Result $result -IsSuccess $false -Installed @() -Contains (
+    'RetryDelaySeconds must be at least 0')
 
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) check(s) failed."; exit 1 }
 Write-Host "`nAll checks passed."
