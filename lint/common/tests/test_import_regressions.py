@@ -31,38 +31,64 @@ class ImportRegressionTests(RepoCase):
         self.write("app/main.py", lines("def run():", "    from app import light"))
         self.assert_findings(["app/main.py:2: import of light inside a function; it's light (PY-14)"])
 
-    def test_acyclic_imports_do_not_expand_ancestors(self) -> None:
+    def test_package_root_survives_hyphenated_ancestors(self) -> None:
+        self.write("packages/my-lib/src/mylib/__init__.py", "")
+        self.write("packages/my-lib/src/mylib/light.py", "VALUE = 1\n")
+        self.write("packages/my-lib/src/mylib/main.py", lines("def run():", "    from mylib import light"))
+        self.assert_findings(
+            ["packages/my-lib/src/mylib/main.py:2: import of light inside a function; it's light (PY-14)"]
+        )
+
+    def test_relative_import_in_hyphenated_folder_is_local(self) -> None:
+        self.write("other-tools/helper.py", "import numpy\n")
+        self.write("my-tools/helper.py", "VALUE = 1\n")
+        self.write("my-tools/run.py", lines("def run():", "    from . import helper"))
+        self.assert_findings(["my-tools/run.py:2: import of helper inside a function; it's light (PY-14)"])
+
+    def test_parent_reexport_does_not_make_a_submodule_cycle(self) -> None:
+        self.write("app/__init__.py", "from app.main import run\n")
+        self.write("app/main.py", lines("def run():", "    from app.light import VALUE"))
+        self.write("app/light.py", "from app import config\n")
+        expected = ["app/main.py:2: import of VALUE inside a function; it's light (PY-14)"]
+        self.assert_findings(expected)
+        self.write("app/config.py", "VALUE = 1\n")
+        self.assert_findings(expected)
+
+    def test_import_graph_work_scales_with_size(self) -> None:
         program = lines(
             "import sys",
             f"sys.path.insert(0, {str(SCRIPT.parent)!r})",
-            "from style_imports import Index, check_imports",
-            "original = Index.spread",
-            "visits = 0",
-            "def counted(self, start):",
-            "    global visits",
-            "    result = original(self, start)",
-            "    visits += len(result)",
-            "    return result",
-            "Index.spread = counted",
-            "count = 2000",
-            "target = sys.argv[1]",
-            "sources = {f'm{i}.py': f'import m{i + 1}\\ndef run():\\n    import {target}\\n' for i in range(count)}",
-            "sources[f'm{count}.py'] = ''",
-            "sources['light.py'] = ''",
-            "assert len(check_imports(sources)) == count",
-            "assert visits <= count * 2, visits",
+            "from style_imports import check_imports",
+            "def work(count, cyclic):",
+            "    visits = 0",
+            "    def trace(frame, event, arg):",
+            "        nonlocal visits",
+            "        if event == 'line' and frame.f_code.co_filename.endswith('style_imports.py'):",
+            "            visits += 1",
+            "        return trace",
+            "    sources = {f'm{i}.py': f'import m{(i + 1) % count}\\ndef run():\\n    import m0\\n'",
+            "               for i in range(count)}",
+            "    if not cyclic:",
+            "        sources[f'm{count - 1}.py'] = 'def run():\\n    import m0\\n'",
+            "    sys.settrace(trace)",
+            "    try:",
+            "        assert not check_imports(sources)",
+            "    finally:",
+            "        sys.settrace(None)",
+            "    return visits",
+            "for cyclic in (False, True):",
+            "    small, large = work(150, cyclic), work(300, cyclic)",
+            "    assert large <= small * 2.5, (cyclic, small, large)",
         )
-        for target in ("json", "light"):
-            with self.subTest(target=target):
-                result = subprocess.run(
-                    [sys.executable, "-B", "-c", program, target],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    check=False,
-                    timeout=60,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", program],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_lazy_imports_alone_do_not_justify_a_cycle(self) -> None:
         self.write("first.py", lines("def run():", "    import second"))

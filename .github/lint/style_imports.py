@@ -39,17 +39,10 @@ def read_module(path: str, packages: frozenset[str]) -> Module:
     pure = PurePosixPath(path)
     folders = pure.parent.parts
     start = next((index for index in range(len(folders)) if "/".join(folders[: index + 1]) in packages), 0)
-    for index, folder in enumerate(folders):
-        if not folder.isidentifier():
-            start = index + 1
     package = folders[start:]
     stem = () if pure.stem == "__init__" else (pure.stem,)
     names = dict.fromkeys(".".join((*parts, *stem)) for parts in (package, folders))
-    usable = tuple(
-        name
-        for name in names
-        if name and name not in STANDARD_MODULES and all(part.isidentifier() for part in name.split("."))
-    )
+    usable = tuple(name for name in names if name and name not in STANDARD_MODULES)
     return Module(path, usable, ".".join(package))
 
 
@@ -102,6 +95,23 @@ def components(edges: dict[str, set[str]]) -> dict[str, int]:
     return groups
 
 
+def reachability(edges: dict[str, set[str]], groups: dict[str, int]) -> dict[int, int]:
+    representatives = {group: name for name, group in groups.items()}
+    condensed: dict[str, set[str]] = {name: set() for name in representatives.values()}
+    for name, targets in edges.items():
+        condensed[representatives[groups[name]]].update(
+            representatives[groups[target]] for target in targets if groups[target] != groups[name]
+        )
+    reachable: dict[int, int] = {}
+    for name in finishing_order(condensed):
+        group = groups[name]
+        mask = 1 << group
+        for target in condensed[name]:
+            mask |= reachable[groups[target]]
+        reachable[group] = mask
+    return reachable
+
+
 class Index:
     def __init__(self, modules: list[Module]) -> None:
         self.by_name: dict[str, list[Module]] = {}
@@ -115,6 +125,7 @@ class Index:
         self.heavy: frozenset[str] = frozenset()
         self.dependencies: dict[str, set[str]] = {name: set() for name in self.known}
         self.groups: dict[str, int] = {}
+        self.reachable: dict[int, int] = {}
 
     def targets(self, module: Module, node: ast.Import | ast.ImportFrom) -> tuple[str, ...]:
         if isinstance(node, ast.Import):
@@ -142,13 +153,11 @@ class Index:
                     direct.add(name)
                 for prefix in own:
                     self.importers.setdefault(prefix, set()).add(name)
-                    self.dependencies[name].add(prefix)
+                if target in self.known and target not in prefixes(name)[:-1]:
+                    self.dependencies[name].add(target)
         self.heavy = self.spread(direct)
-        edges = {name: set(targets) for name, targets in self.dependencies.items()}
-        for name, modules in self.by_name.items():
-            for module in modules:
-                edges[name].update(target for item in module.lazy for target in item.targets if target in self.known)
-        self.groups = components(edges)
+        self.groups = components(self.dependencies)
+        self.reachable = reachability(self.dependencies, self.groups)
 
     def spread(self, start: set[str]) -> frozenset[str]:
         found = set(start)
@@ -169,21 +178,8 @@ class Index:
     def reaches(self, name: str, module: Module) -> bool:
         if name not in self.known:
             return False
-        group = self.groups[name]
-        targets = {target for target in module.names if self.groups[target] == group}
-        if not targets:
-            return False
-        seen = {name}
-        queue = [name]
-        while queue:
-            current = queue.pop()
-            if current in targets:
-                return True
-            for target in self.dependencies[current]:
-                if self.groups[target] == group and target not in seen:
-                    seen.add(target)
-                    queue.append(target)
-        return False
+        mask = self.reachable[self.groups[name]]
+        return any(mask & (1 << self.groups[target]) for target in module.names)
 
 
 def collect(module: Module, index: Index, node: ast.AST, *, lazy: bool) -> None:
