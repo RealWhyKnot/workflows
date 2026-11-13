@@ -56,6 +56,39 @@ try {
         Test-Path -LiteralPath (Join-Path $sandbox '.github/lint/style_check.py'))
     Assert-Check -Name 'selftests are not distributed' -Condition (
         -not (Test-Path -LiteralPath (Join-Path $sandbox '.github/lint/selftest')))
+    $runner = '.github/lint/repo_checks.sh'
+    $mode = @(& git -C $sandbox ls-files --stage -- $runner)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the runner mode.' }
+    Assert-Check -Name 'a new shebang file has an executable index entry' -Condition (
+        $mode.Count -eq 1 -and $mode[0].StartsWith('100755 '))
+    $staged = @(& git -C $sandbox diff --cached --name-only -- $runner)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect staged files.' }
+    Assert-Check -Name 'new script contents remain unstaged' -Condition ($staged.Count -eq 0)
+    $runnerPath = Join-Path $sandbox $runner
+    $baseline = [IO.File]::ReadAllText($runnerPath)
+    [IO.File]::WriteAllText($runnerPath, "#!/usr/bin/env bash`necho staged`n")
+    $null = & git -C $sandbox add --chmod=-x -- $runner
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the runner fixture.' }
+    $before = & git -C $sandbox rev-parse ":$runner"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the staged runner.' }
+    [IO.File]::WriteAllText($runnerPath, $baseline)
+    $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'compare mode reports a wrong executable bit' -Condition (
+        $result.Code -eq 1 -and $result.Text.Contains("$runner isn't executable in git"))
+    $mode = @(& git -C $sandbox ls-files --stage -- $runner)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the runner mode.' }
+    Assert-Check -Name 'compare mode leaves the index unchanged' -Condition ($mode[0].StartsWith('100644 '))
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
+    Assert-Check -Name 'force repairs the executable bit' -Condition ($result.Code -eq 0)
+    $mode = @(& git -C $sandbox ls-files --stage -- $runner)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the repaired runner mode.' }
+    Assert-Check -Name 'tracked script is executable without staging its contents' -Condition (
+        $mode[0].StartsWith("100755 $before "))
+    $null = & git -C $sandbox add -- $runner
+    if ($LASTEXITCODE -ne 0) { throw 'Could not index the installed runner.' }
+    $mode = @(& git -C $sandbox ls-files --stage -- $runner)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the runner mode after add.' }
+    Assert-Check -Name 'git add preserves the installed executable bit' -Condition ($mode[0].StartsWith('100755 '))
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'unchanged install is idempotent' -Condition (
         $result.Code -eq 0 -and $result.Text.Contains('ruff.toml is already current'))
@@ -132,6 +165,12 @@ try {
         $result.Text -match 'rs/Cargo\.toml is missing \d+ settings')
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'unknown')
     Assert-Check -Name 'unknown languages fail' -Condition ($result.Code -ne 0)
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'powershell', '-Force')
+    Assert-Check -Name 'PowerShell baseline installs' -Condition ($result.Code -eq 0)
+    $mode = @(& git -C $sandbox ls-files --stage -- .github/lint/Invoke-PSLint.ps1)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the PowerShell script mode.' }
+    Assert-Check -Name 'non-shell shebang files are executable too' -Condition (
+        $mode.Count -eq 1 -and $mode[0].StartsWith('100755 '))
 } finally {
     Remove-Item -LiteralPath $sandbox -Recurse -Force
 }

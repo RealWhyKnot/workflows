@@ -90,4 +90,32 @@ function Get-RuleReason {
     return "$($Rule.When) exists"
 }
 
-Export-ModuleMember -Function Get-FileLanguage, Test-Rule, Get-RuleReason
+function Set-ExecutableMode {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string] $Root,
+        [Parameter(Mandatory)][string] $File,
+        [bool] $Apply
+    )
+
+    $entries = @(& git -C $Root ls-files --stage -- $File)
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the git mode for $File." }
+    if ($entries.Count -gt 1) { throw "Resolve the merge conflict in $File before installing lint." }
+    $hasMode = $entries.Count -eq 1 -and $entries[0].StartsWith('100755 ')
+    if (-not $hasMode -and -not $Apply) {
+        Write-Host "$File isn't executable in git. Run Install-Lint with -Force."
+        return $true
+    }
+    if (-not $hasMode) {
+        $null = & git -C $Root add --intent-to-add --chmod=+x -- $File
+        if ($LASTEXITCODE -ne 0) { throw "Could not make $File executable in git." }
+    }
+    if ($Apply -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        & chmod +x -- (Join-Path $Root $File)
+        if ($LASTEXITCODE -ne 0) { throw "Could not make $File executable on disk." }
+    }
+    return $false
+}
+
+Export-ModuleMember -Function Get-FileLanguage, Test-Rule, Get-RuleReason, Set-ExecutableMode

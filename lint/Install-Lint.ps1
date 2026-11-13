@@ -220,21 +220,29 @@ foreach ($key in $plan.Keys) {
     }
     $text = Add-VendoredEntry -Key $key -Text $text -Entry $local
     $destination = Join-Path $root $key
-    if (Test-Path -LiteralPath $destination -PathType Leaf) {
+    $exists = Test-Path -LiteralPath $destination -PathType Leaf
+    $isCurrent = $false
+    if ($exists) {
         $current = [IO.File]::ReadAllText($destination) -replace "`r`n", "`n"
         if ($current -ceq $text) {
             Write-Host "${names}: $key is already current"
-            continue
-        }
-        if (-not $Force) {
+            $isCurrent = $true
+        } elseif (-not $Force) {
             Write-Host "${names}: $key differs from the baseline. Fix it by hand, or run again with -Force."
             $hasPendingChanges = $true
             continue
         }
     }
-    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
-    [IO.File]::WriteAllText($destination, $text, $utf8)
-    Write-Host "${names}: installed $key"
+    if (-not $isCurrent) {
+        $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+        [IO.File]::WriteAllText($destination, $text, $utf8)
+        Write-Host "${names}: installed $key"
+    }
+    if ($isRepo -and $text.StartsWith('#!')) {
+        if (Set-ExecutableMode -Root $root -File $key -Apply ($Force -or -not $exists)) {
+            $hasPendingChanges = $true
+        }
+    }
 }
 
 if ($hasPendingChanges) {
