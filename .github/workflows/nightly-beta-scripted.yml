@@ -94,8 +94,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PLANNER: ${{ inputs.planner }}
+          REPO: ${{ github.repository }}
         run: |
-          git fetch --tags --force
+          git fetch --tags --force "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:REPO).git"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch tags.' }
           $global:LASTEXITCODE = 0
           & $env:PLANNER
           if ($LASTEXITCODE -ne 0) { throw "$env:PLANNER failed ($LASTEXITCODE)" }
