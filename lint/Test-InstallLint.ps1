@@ -72,6 +72,16 @@ try {
     Assert-Check -Name 'named vendored paths are folded' -Condition ($config.exclude -contains '**/upstream')
     Assert-Check -Name 'rooted vendored paths are folded' -Condition ($config.exclude -contains 'external/library')
     Assert-Check -Name 'vendored files are folded' -Condition ($config.exclude -contains 'docs/NOTICE.md')
+    $typos = [IO.File]::ReadAllLines((Join-Path $sandbox '.github/lint/typos.toml'))
+    Assert-Check -Name 'typos skips vendored paths' -Condition (
+        ($typos -contains '  "upstream/",') -and ($typos -contains '  "/external/library/",') -and
+        ($typos -contains '  "/docs/NOTICE.md",'))
+    $gitleaks = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/gitleaks.toml'))
+    Assert-Check -Name 'gitleaks keeps the default rules' -Condition ($gitleaks.Contains('useDefault = true'))
+    Assert-Check -Name 'gitleaks skips only vendored paths' -Condition (
+        $gitleaks.Contains("'''((^|/)upstream/)'''") -and
+        $gitleaks.Contains("'''(^external/library/)'''") -and
+        $gitleaks.Contains("'''(^docs/NOTICE\.md$)'''"))
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'folded baselines remain current' -Condition ($result.Code -eq 0)
     [IO.File]::WriteAllText($local, "*.py`n")
@@ -95,6 +105,15 @@ try {
         $section.Success -and $body.Contains("generated_code = true`n") -and $body.Contains("ignore = true`n"))
     $ignore = [IO.File]::ReadAllLines((Join-Path $sandbox '.prettierignore'))
     Assert-Check -Name 'prettierignore keeps vendored files' -Condition ($ignore -contains '/docs/NOTICE.md')
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'css', '-Force')
+    Assert-Check -Name 'CSS baseline installs' -Condition ($result.Code -eq 0)
+    $stylelint = [IO.File]::ReadAllText((Join-Path $sandbox 'stylelint.config.mjs'))
+    $guards = @(
+        'ignoreDisables', 'reportNeedlessDisables', 'reportInvalidScopeDisables', 'reportDescriptionlessDisables'
+    )
+    foreach ($guard in $guards) {
+        Assert-Check -Name "Stylelint keeps $guard enabled" -Condition ($stylelint.Contains("${guard}: true"))
+    }
     [IO.File]::WriteAllText($local, '')
     $lints = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'rust/merge/workspace-lints.toml'))
     $member = Join-Path $sandbox 'rs/crates/member'

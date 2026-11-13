@@ -151,6 +151,9 @@ export default {
   extends: ["stylelint-config-standard"],
   plugins: ["stylelint-high-performance-animation", comments, fileName, important, inlineStyle, motion, tokens],
   ignoreDisables: true,
+  reportNeedlessDisables: true,
+  reportInvalidScopeDisables: true,
+  reportDescriptionlessDisables: true,
   ignoreFiles: ignored,
   referenceFiles: references,
   overrides: [

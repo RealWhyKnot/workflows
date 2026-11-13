@@ -239,7 +239,7 @@ export default defineConfig(
     "**/third_party/",
     ...gitIgnored(),
   ]),
-  { linterOptions: { noInlineConfig: true } },
+  { linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "error" } },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -256,6 +256,7 @@ export default defineConfig(
     rules: {
       eqeqeq: ["error", "smart"],
       "guard-for-in": "error",
+      "max-lines": ["error", { max: 600, skipBlankLines: false, skipComments: false }],
       "no-restricted-syntax": ["error", ...syntax, ...defaultExports],
       "no-var": "error",
       "preserve-caught-error": ["error", { requireCatchParameter: true }],
@@ -285,6 +286,7 @@ export default defineConfig(
         { selector: ["objectLiteralProperty", "objectLiteralMethod", "typeProperty", "typeMethod"], format: null },
       ],
       "@typescript-eslint/no-confusing-void-expression": ["error", { ignoreArrowShorthand: true }],
+      "@typescript-eslint/no-dynamic-delete": "error",
       "@typescript-eslint/no-floating-promises": [
         "error",
         {
@@ -357,7 +359,6 @@ export default defineConfig(
           files: ["**/*.astro"],
           languageOptions: { parserOptions: { parser: tseslint.parser, projectService: false, project: true } },
           rules: {
-            "max-lines": ["error", { max: 600 }],
             "no-restricted-syntax": ["error", ...syntax, ...astroStyle],
             "astro/no-unused-css-selector": "error",
           },
