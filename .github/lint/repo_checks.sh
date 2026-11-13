@@ -33,6 +33,10 @@ classify_path() {
   printf '%s\n' "${found}"
 }
 
+if [[ ! -f .github/lint/vendored-paths.txt ]]; then
+  printf '.github/lint/vendored-paths.txt is missing. Run Install-Lint again.\n' >&2
+  exit 1
+fi
 vendored=()
 while IFS= read -r entry || [[ -n ${entry} ]]; do
   entry=${entry%$'\r'}

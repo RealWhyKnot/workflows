@@ -100,6 +100,12 @@ class RepoChecksTests(RepoCase):
         self.assertIn("--log-opts=--branches --not --remotes", scan)
         self.assertIn("--ignore-gitleaks-allow", scan)
 
+    def test_missing_vendored_list_explains_setup(self) -> None:
+        (self.root / ".github/lint/vendored-paths.txt").unlink()
+        result = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, ".github/lint/vendored-paths.txt is missing. Run Install-Lint again.\n")
+
     def test_missing_tool_fails_with_its_name(self) -> None:
         for name in ("typos", "gitleaks", "actionlint", "zizmor", "cargo-deny"):
             with self.subTest(name=name):
