@@ -34,7 +34,7 @@ what changed.
 | Releases      | [`resolve-tag`](#resolve-tag), [`version-sequence`](#version-sequence), [`release-notes`](#release-notes), [`checksums`](#checksums), [`publish-release`](#publish-release), [`commit-on-branch`](#commit-on-branch) |
 | Nightly betas | [`beta-gate`](#beta-gate), [`nightly-plan`](#nightly-plan), [`wait-for-ci`](#wait-for-ci)                                                                                                                            |
 | Repo checks   | [`commit-subjects`](#commit-subjects), [`workflow-syntax`](#workflow-syntax), [`conformance`](#conformance)                                                                                                          |
-| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis), [`setup-pssa`](#setup-pssa)                                                                                                                                |
+| Setup         | [`setup-rust`](#setup-rust), [`setup-nsis`](#setup-nsis), [`setup-pssa`](#setup-pssa), [`setup-shell-tools`](#setup-shell-tools)                                                                                     |
 
 The repo also has my [git hooks](#hooks), [lint baselines](#lint) and a starting
 [Dependabot config](#dependabot).
@@ -635,6 +635,23 @@ to eight minutes on a Windows runner. `version` is major.minor.patch, default `1
 
 The cache key is the OS, the architecture, pwsh major.minor, the PSScriptAnalyzer version and the
 runner image version. The `cache-hit` output is `true` when the profile came from the cache.
+
+### setup-shell-tools
+
+Downloads shellcheck, shfmt and, if you ask for it, actionlint from their GitHub releases, checks each
+one against a pinned SHA-256 and puts them on `PATH`. Linux x64 and Windows x64 only. Each download
+gets three tries, 30 seconds apart.
+
+```yaml
+- uses: RealWhyKnot/workflows/setup-shell-tools@v1
+  with:
+    shellcheck: "0.11.0"
+    shfmt: "3.14.1"
+    actionlint: "1.7.12"
+```
+
+`shellcheck` defaults to `0.11.0` and `shfmt` to `3.14.1`. `actionlint` is skipped unless you set it;
+`1.7.12` is the version it knows. Any other version fails, because the hashes are pinned per version.
 
 ## Repo files
 

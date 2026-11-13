@@ -1,0 +1,34 @@
+name: Set up shell tools
+description: Install shellcheck, shfmt and optional actionlint from verified GitHub releases.
+
+inputs:
+  shellcheck:
+    description: ShellCheck version.
+    required: false
+    default: "0.11.0"
+  shfmt:
+    description: shfmt version.
+    required: false
+    default: "3.14.1"
+  actionlint:
+    description: actionlint version. Empty skips installation.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install shell tools
+      shell: pwsh
+      env:
+        SHELLCHECK_VERSION: ${{ inputs.shellcheck }}
+        SHFMT_VERSION: ${{ inputs.shfmt }}
+        ACTIONLINT_VERSION: ${{ inputs.actionlint }}
+        ACTION_DIRECTORY: ${{ github.action_path }}
+      run: |
+        $global:LASTEXITCODE = 0
+        & (Join-Path $env:ACTION_DIRECTORY 'Install-ShellTools.ps1') `
+          -Shellcheck "$env:SHELLCHECK_VERSION" `
+          -Shfmt "$env:SHFMT_VERSION" `
+          -Actionlint "$env:ACTIONLINT_VERSION"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
