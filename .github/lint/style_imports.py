@@ -38,10 +38,11 @@ def is_type_checking(node: ast.If) -> bool:
 def read_module(path: str, packages: frozenset[str]) -> Module:
     pure = PurePosixPath(path)
     folders = pure.parent.parts
-    depth = 0
-    while depth < len(folders) and "/".join(folders[: len(folders) - depth]) in packages:
-        depth += 1
-    package = folders[len(folders) - depth :]
+    start = next((index for index in range(len(folders)) if "/".join(folders[: index + 1]) in packages), 0)
+    for index, folder in enumerate(folders):
+        if not folder.isidentifier():
+            start = index + 1
+    package = folders[start:]
     stem = () if pure.stem == "__init__" else (pure.stem,)
     names = dict.fromkeys(".".join((*parts, *stem)) for parts in (package, folders))
     usable = tuple(
@@ -65,6 +66,42 @@ def prefixes(name: str) -> list[str]:
     return [".".join(parts[:end]) for end in range(1, len(parts) + 1)]
 
 
+def finishing_order(edges: dict[str, set[str]]) -> list[str]:
+    seen: set[str] = set()
+    order: list[str] = []
+    for name in edges:
+        pending = [(name, False)]
+        while pending:
+            current, finished = pending.pop()
+            if finished:
+                order.append(current)
+            elif current not in seen:
+                seen.add(current)
+                pending.append((current, True))
+                pending.extend((target, False) for target in edges[current] if target not in seen)
+    return order
+
+
+def components(edges: dict[str, set[str]]) -> dict[str, int]:
+    reverse: dict[str, set[str]] = {name: set() for name in edges}
+    for name, targets in edges.items():
+        for target in targets:
+            reverse[target].add(name)
+    groups: dict[str, int] = {}
+    for name in reversed(finishing_order(edges)):
+        if name in groups:
+            continue
+        group = len(groups)
+        queue = [name]
+        groups[name] = group
+        while queue:
+            for target in reverse[queue.pop()]:
+                if target not in groups:
+                    groups[target] = group
+                    queue.append(target)
+    return groups
+
+
 class Index:
     def __init__(self, modules: list[Module]) -> None:
         self.by_name: dict[str, list[Module]] = {}
@@ -76,13 +113,22 @@ class Index:
         self.known = frozenset(known - STANDARD_MODULES)
         self.importers: dict[str, set[str]] = {}
         self.heavy: frozenset[str] = frozenset()
-        self.ancestors: dict[str, frozenset[str]] = {}
+        self.dependencies: dict[str, set[str]] = {name: set() for name in self.known}
+        self.groups: dict[str, int] = {}
 
     def targets(self, module: Module, node: ast.Import | ast.ImportFrom) -> tuple[str, ...]:
         if isinstance(node, ast.Import):
-            return tuple(alias.name for alias in node.names)
+            return tuple(self.local_name(module, alias.name) for alias in node.names)
         base = resolve(module, node)
+        if not node.level:
+            base = self.local_name(module, base)
         return tuple(f"{base}.{alias.name}" if f"{base}.{alias.name}" in self.known else base for alias in node.names)
+
+    def local_name(self, module: Module, name: str) -> str:
+        sibling = f"{module.package}.{name}"
+        if name.split(".", maxsplit=1)[0] not in STANDARD_MODULES and name not in self.known and sibling in self.known:
+            return sibling
+        return name
 
     def own_prefixes(self, name: str) -> list[str]:
         return [prefix for prefix in prefixes(name) if prefix in self.known]
@@ -96,7 +142,13 @@ class Index:
                     direct.add(name)
                 for prefix in own:
                     self.importers.setdefault(prefix, set()).add(name)
+                    self.dependencies[name].add(prefix)
         self.heavy = self.spread(direct)
+        edges = {name: set(targets) for name, targets in self.dependencies.items()}
+        for name, modules in self.by_name.items():
+            for module in modules:
+                edges[name].update(target for item in module.lazy for target in item.targets if target in self.known)
+        self.groups = components(edges)
 
     def spread(self, start: set[str]) -> frozenset[str]:
         found = set(start)
@@ -115,9 +167,23 @@ class Index:
         return any(prefix in self.heavy for prefix in own)
 
     def reaches(self, name: str, module: Module) -> bool:
-        if module.path not in self.ancestors:
-            self.ancestors[module.path] = self.spread(set(module.names))
-        return any(prefix in self.ancestors[module.path] for prefix in self.own_prefixes(name))
+        if name not in self.known:
+            return False
+        group = self.groups[name]
+        targets = {target for target in module.names if self.groups[target] == group}
+        if not targets:
+            return False
+        seen = {name}
+        queue = [name]
+        while queue:
+            current = queue.pop()
+            if current in targets:
+                return True
+            for target in self.dependencies[current]:
+                if self.groups[target] == group and target not in seen:
+                    seen.add(target)
+                    queue.append(target)
+        return False
 
 
 def collect(module: Module, index: Index, node: ast.AST, *, lazy: bool) -> None:
