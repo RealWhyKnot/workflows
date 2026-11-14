@@ -63,21 +63,13 @@ while IFS= read -r -d '' file; do
 done <"${files}"
 require_tool typos
 require_tool gitleaks
-if ((${#workflows[@]} > 0)); then
-  require_tool actionlint
-fi
-if ((${#workflows[@]} + ${#actions[@]} > 0)); then
-  require_tool zizmor
-fi
-if ((${#manifests[@]} > 0)); then
-  require_tool cargo
-  require_tool cargo-deny
-fi
 typos --config .github/lint/typos.toml
 if ((${#workflows[@]} > 0)); then
+  require_tool actionlint
   actionlint "${workflows[@]}"
 fi
 if ((${#workflows[@]} + ${#actions[@]} > 0)); then
+  require_tool zizmor
   zizmor --offline --strict-collection --config .github/zizmor.yml "${workflows[@]}" "${actions[@]}"
 fi
 leak_options=(--config "${root}/.github/lint/gitleaks.toml" --no-banner --redact --verbose
@@ -97,6 +89,8 @@ else
 fi
 declare -A checked=()
 for manifest in "${manifests[@]}"; do
+  require_tool cargo
+  require_tool cargo-deny
   workspace=$(cargo locate-project --workspace --message-format plain --manifest-path "${manifest}")
   if [[ -z ${checked[${workspace}]:-} ]]; then
     cargo deny --manifest-path "${workspace}" --workspace --config "${root}/.github/lint/deny.toml" check
