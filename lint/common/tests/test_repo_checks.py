@@ -112,6 +112,15 @@ class RepoChecksTests(RepoCase):
         result = self.run_runner()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_action_only_repo_needs_zizmor_but_not_actionlint(self) -> None:
+        self.write("action.yml", "name: check\n")
+        (self.bin / "actionlint").unlink()
+        self.assertEqual(self.run_runner().returncode, 0)
+        (self.bin / "zizmor").unlink()
+        result = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("zizmor is missing", result.stderr)
+
     def test_missing_tool_fails_with_its_name(self) -> None:
         self.write(".github/workflows/check.yml", "name: check\n")
         self.write("Cargo.toml", "[workspace]\n")
