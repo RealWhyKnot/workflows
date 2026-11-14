@@ -57,6 +57,29 @@ function Get-MissingLine {
     }
 }
 
+function Get-MisorderedAttribute {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Expected,
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Actual
+    )
+    $lines = @(foreach ($line in (Split-Section -Text $Actual)['']) { ConvertTo-Setting -Line $line })
+    $catchAll = -1
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index].StartsWith('* ')) {
+            $catchAll = $index
+        }
+    }
+    $after = @($lines | Select-Object -Skip ($catchAll + 1))
+    foreach ($line in (Split-Section -Text $Expected)['']) {
+        $setting = ConvertTo-Setting -Line $line
+        if (-not $setting.StartsWith('* ') -and $setting -in $lines -and $setting -notin $after) {
+            "$line (move it below the * line)"
+        }
+    }
+}
+
 function Get-MissingJson {
     [CmdletBinding()]
     [OutputType([string])]
@@ -216,7 +239,12 @@ function Test-MergeFile {
         $found = ConvertFrom-Json -InputObject $actual
         $missing = @(Get-MissingJson -Expected $wanted -Actual $found)
     } else {
-        $missing = @(Get-MissingLine -Expected $expected -Actual $actual)
+        $missing = @(
+            Get-MissingLine -Expected $expected -Actual $actual
+            if ($leaf -eq '.gitattributes') {
+                Get-MisorderedAttribute -Expected $expected -Actual $actual
+            }
+        )
     }
     if ($missing.Count -eq 0) {
         Write-Host "${Name}: $target has everything in merge/$leaf"

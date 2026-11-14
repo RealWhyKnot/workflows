@@ -127,6 +127,11 @@ try {
     Assert-Check -Name 'CSharp line endings are reported when missing' -Condition (
         $result.Code -eq 1 -and $result.Text -match 'csharp: \.gitattributes is missing 5 settings')
     $csharpAttributes = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'csharp/merge/.gitattributes'))
+    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $csharpAttributes + $common + $attributes)
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell', '-Force')
+    Assert-Check -Name 'CSharp line endings above the catch-all line are reported' -Condition (
+        $result.Code -eq 1 -and $result.Text -match 'csharp: \.gitattributes is missing 5 settings' -and
+        $result.Text -match 'move it below the \* line')
     [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $common + $attributes + $csharpAttributes)
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell', '-Force')
     Assert-Check -Name 'multiple languages merge successfully' -Condition ($result.Code -eq 0)
@@ -137,7 +142,8 @@ try {
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'shell', '-Force')
     $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
     Assert-Check -Name 'vendored folders and files share the editor sections' -Condition (
-        $result.Code -eq 0 -and $editor.Contains("`n[{vendor,third_party,node_modules,.yarn,upstream}/**]`nignore = true`n") -and
+        $result.Code -eq 0 -and
+        $editor.Contains("`n[{vendor,third_party,node_modules,.yarn,upstream}/**]`nignore = true`n") -and
         $editor.Contains("`n[**/{vendor,third_party,node_modules,.yarn,upstream}/**]`nignore = true`n") -and
         $editor.Contains("`n[docs/NOTICE.md]`nignore = true`n"))
     [IO.File]::WriteAllText($local, '')
