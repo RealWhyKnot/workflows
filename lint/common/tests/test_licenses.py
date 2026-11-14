@@ -7,6 +7,10 @@ from lint.common.tests.test_style_check import BASELINE
 
 
 class LicenseTests(unittest.TestCase):
+    def test_unused_allowed_licenses_are_quiet(self) -> None:
+        config = tomllib.loads((BASELINE / "rust/.github/lint/deny.toml").read_text(encoding="utf-8"))
+        self.assertEqual(config["licenses"].get("unused-allowed-license"), "allow")
+
     def test_mpl_is_allowed_without_gpl_exceptions(self) -> None:
         config = tomllib.loads((BASELINE / "rust/.github/lint/deny.toml").read_text(encoding="utf-8"))
         licenses = config["licenses"]
