@@ -93,9 +93,15 @@ function Add-FileSection {
         [Parameter(Mandatory)][string] $Text,
         [Parameter(Mandatory)][string[]] $File
     )
+    if (-not $Text.EndsWith("`n")) {
+        $Text += "`n"
+    }
     $found = [regex]::Match($Text, '(?m)^\[\{[^}\n]*\.yarn(?:,[^}\n]*)?\}/\*\*\]\n(?<body>(?:[^\[\n][^\n]*\n)*)')
     if (-not $found.Success) {
         throw "The baseline has no [{...,.yarn}/**] section to add the repo's vendored files after."
+    }
+    if ($found.Groups['body'].Length -eq 0) {
+        throw "The baseline's [{...,.yarn}/**] section has no settings to copy to the repo's vendored files."
     }
     $glob = if ($File.Count -eq 1) { $File[0] } else { '{' + ($File -join ',') + '}' }
     $section = "[$glob]`n" + $found.Groups['body'].Value
