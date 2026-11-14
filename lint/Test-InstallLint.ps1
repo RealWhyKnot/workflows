@@ -124,6 +124,11 @@ try {
     $attributes = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'shell/merge/.gitattributes'))
     [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $common + $attributes)
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell', '-Force')
+    Assert-Check -Name 'CSharp line endings are reported when missing' -Condition (
+        $result.Code -eq 1 -and $result.Text -match 'csharp: \.gitattributes is missing 5 settings')
+    $csharpAttributes = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'csharp/merge/.gitattributes'))
+    [IO.File]::WriteAllText((Join-Path $sandbox '.gitattributes'), $common + $attributes + $csharpAttributes)
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell', '-Force')
     Assert-Check -Name 'multiple languages merge successfully' -Condition ($result.Code -eq 0)
     $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
     Assert-Check -Name 'shell and CSharp editor sections survive' -Condition (
