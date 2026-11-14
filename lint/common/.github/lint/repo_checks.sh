@@ -61,11 +61,17 @@ while IFS= read -r -d '' file; do
     *) ;;
   esac
 done <"${files}"
-for tool in typos actionlint zizmor gitleaks cargo-deny; do
-  require_tool "${tool}"
-done
+require_tool typos
+require_tool gitleaks
+if ((${#workflows[@]} > 0)); then
+  require_tool actionlint
+fi
+if ((${#workflows[@]} + ${#actions[@]} > 0)); then
+  require_tool zizmor
+fi
 if ((${#manifests[@]} > 0)); then
   require_tool cargo
+  require_tool cargo-deny
 fi
 typos --config .github/lint/typos.toml
 if ((${#workflows[@]} > 0)); then

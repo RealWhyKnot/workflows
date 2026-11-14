@@ -106,8 +106,16 @@ class RepoChecksTests(RepoCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stderr, ".github/lint/vendored-paths.txt is missing. Run Install-Lint again.\n")
 
+    def test_tools_for_missing_file_kinds_are_optional(self) -> None:
+        for name in ("actionlint", "zizmor", "cargo", "cargo-deny"):
+            (self.bin / name).unlink()
+        result = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_tool_fails_with_its_name(self) -> None:
-        for name in ("typos", "gitleaks", "actionlint", "zizmor", "cargo-deny"):
+        self.write(".github/workflows/check.yml", "name: check\n")
+        self.write("Cargo.toml", "[workspace]\n")
+        for name in ("typos", "gitleaks", "actionlint", "zizmor", "cargo", "cargo-deny"):
             with self.subTest(name=name):
                 tool = self.bin / name
                 content = tool.read_bytes()
