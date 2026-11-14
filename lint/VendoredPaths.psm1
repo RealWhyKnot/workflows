@@ -93,7 +93,7 @@ function Add-FileSection {
         [Parameter(Mandatory)][string] $Text,
         [Parameter(Mandatory)][string[]] $File
     )
-    $found = [regex]::Match($Text, '(?m)^\[\{[^}\n]*\.yarn\}/\*\*\]\n(?<body>(?:[^\[\n][^\n]*\n)*)')
+    $found = [regex]::Match($Text, '(?m)^\[\{[^}\n]*\.yarn(?:,[^}\n]*)?\}/\*\*\]\n(?<body>(?:[^\[\n][^\n]*\n)*)')
     if (-not $found.Success) {
         throw "The baseline has no [{...,.yarn}/**] section to add the repo's vendored files after."
     }

@@ -128,6 +128,12 @@ try {
     $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
     Assert-Check -Name 'shell and CSharp editor sections survive' -Condition (
         $editor.Contains('[[shell]]') -and $editor.Contains('[*.{cs,csx}]'))
+    [IO.File]::WriteAllText($local, "upstream/`n/docs/NOTICE.md`n")
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'shell', '-Force')
+    $editor = [IO.File]::ReadAllText((Join-Path $sandbox '.editorconfig'))
+    Assert-Check -Name 'vendored folders and files share the editor sections' -Condition (
+        $result.Code -eq 0 -and $editor.Contains('.yarn,upstream}/**]') -and $editor.Contains('[docs/NOTICE.md]'))
+    [IO.File]::WriteAllText($local, '')
     [IO.File]::WriteAllText($local, "/docs/NOTICE.md`n/docs/LICENSE.txt`n")
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell,typescript', '-Force')
     Assert-Check -Name 'vendored files install with TypeScript' -Condition ($result.Code -eq 0)
