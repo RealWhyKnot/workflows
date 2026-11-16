@@ -113,6 +113,7 @@ if ($Lang) {
     }
 }
 
+$extendable = @('typos.toml', 'deny.toml')
 $hasPendingChanges = $false
 $plan = [ordered]@{}
 foreach ($name in @('common'; $selected)) {
@@ -220,9 +221,28 @@ foreach ($key in $plan.Keys) {
     }
     $text = Add-VendoredEntry -Key $key -Text $text -Entry $local
     if ($key -match '^\.github/lint/[^/]+\.toml$') {
-        $extra = Join-Path $root ($key -replace '\.toml$', '.local.toml')
+        $extraKey = $key -replace '\.toml$', '.local.toml'
+        $extra = Join-Path $root $extraKey
         if (Test-Path -LiteralPath $extra -PathType Leaf) {
-            $addition = ([IO.File]::ReadAllText($extra) -replace "`r`n", "`n").Trim("`n")
+            if ((Split-Path -Leaf $key) -notin $extendable) {
+                Write-Host "${names}: $extraKey isn't allowed. Only $($extendable -join ' and ') take local additions."
+                $hasPendingChanges = $true
+                continue
+            }
+            $addition = ([IO.File]::ReadAllText($extra) -replace "`r`n", "`n").Trim()
+            $header = '(?m)^\s*(\[[^\[\]]+\])\s*$'
+            $tables = @(foreach ($match in [regex]::Matches($text, $header)) { $match.Groups[1].Value })
+            $repeated = @(foreach ($match in [regex]::Matches($addition, $header)) {
+                    if ($match.Groups[1].Value -in $tables) {
+                        $match.Groups[1].Value
+                    }
+                })
+            if ($repeated.Count -gt 0) {
+                $list = $repeated -join ', '
+                Write-Host "${names}: $extraKey repeats $list from $key. Only add tables $key doesn't have."
+                $hasPendingChanges = $true
+                continue
+            }
             if ($addition) {
                 $text = $text.TrimEnd("`n") + "`n`n" + $addition + "`n"
             }

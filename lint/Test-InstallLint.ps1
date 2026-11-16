@@ -133,6 +133,22 @@ try {
     $typos = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/typos.toml'))
     Assert-Check -Name 'removing the local file drops its additions' -Condition (
         $result.Code -eq 0 -and -not $typos.Contains('Wexley'))
+    [IO.File]::WriteAllText($extra, "  `r`n `n")
+    $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'a blank local file adds nothing' -Condition ($result.Code -eq 0)
+    [IO.File]::WriteAllText($extra, "[files]`nextend-exclude = []`n")
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
+    $after = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/typos.toml'))
+    Assert-Check -Name 'a local file cannot repeat a shared table' -Condition (
+        $result.Code -eq 1 -and $result.Text -match 'repeats \[files\]' -and $after -ceq $typos)
+    Remove-Item -LiteralPath $extra
+    $leaks = Join-Path $sandbox '.github/lint/gitleaks.local.toml'
+    [IO.File]::WriteAllText($leaks, "[allowlist]`npaths = ['''.*''']`n")
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
+    $after = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/gitleaks.toml'))
+    Assert-Check -Name 'gitleaks takes no local additions' -Condition (
+        $result.Code -eq 1 -and $result.Text -match "gitleaks\.local\.toml isn't allowed" -and $after -ceq $gitleaks)
+    Remove-Item -LiteralPath $leaks
     [IO.File]::WriteAllText($local, "*.py`n")
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'invalid vendored paths fail' -Condition ($result.Code -ne 0)
