@@ -34,10 +34,10 @@ jobs:
           persist-credentials: false
 
       - name: Workflow syntax
-        uses: RealWhyKnot/workflows/workflow-syntax@v1
+        uses: RealWhyKnot/workflows/workflow-syntax@v2026.11.16.0
 
       - name: Conformance
-        uses: RealWhyKnot/workflows/conformance@v1
+        uses: RealWhyKnot/workflows/conformance@v2026.11.16.0
         with:
           pins: ${{ inputs.pins }}
           ignore-ecosystems: ${{ inputs.ignore-ecosystems }}
@@ -50,7 +50,7 @@ jobs:
 
       - name: Set up lint tools
         if: hashFiles('.github/lint/repo_checks.sh') != ''
-        uses: RealWhyKnot/workflows/setup-lint-tools@v1
+        uses: RealWhyKnot/workflows/setup-lint-tools@v2026.11.16.0
 
       - name: Run repo checks
         if: hashFiles('.github/lint/repo_checks.sh') != ''
