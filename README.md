@@ -729,6 +729,11 @@ Older installs kept these files at the repo root. Install-Lint moves a root
 Install-Lint also adds vendored paths to the typos and gitleaks configs. Gitleaks keeps its default
 secret-detection rules; only vendored paths are allowed through.
 
+To add to a `.toml` config in `.github/lint/`, put a file with the same name ending in `.local.toml`
+next to it, for example `typos.local.toml` for names the spell check should accept or
+`deny.local.toml` for a licence exception. Install-Lint appends it to the installed config. Only add
+tables the shared config doesn't have, like `[default.extend-words]` or `[[licenses.exceptions]]`.
+
 `style_check.py` and the `style_*.py` modules beside it check things the linters can't: comments and
 inline suppressions in Rust, C# and Python; source files over 600 lines; Sass, Less and Stylus
 files; committed generated C#; crates that don't inherit `[workspace.lints]`; lint or format configs

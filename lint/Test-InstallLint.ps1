@@ -117,6 +117,22 @@ try {
         $gitleaks.Contains("'''(^docs/NOTICE\.md$)'''"))
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'folded baselines remain current' -Condition ($result.Code -eq 0)
+    $extra = Join-Path $sandbox '.github/lint/typos.local.toml'
+    [IO.File]::WriteAllText($extra, "[default.extend-words]`r`nWexley = `"Wexley`"`r`n`r`n")
+    $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'a new local addition is drift until forced' -Condition ($result.Code -eq 1)
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
+    $typos = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/typos.toml'))
+    Assert-Check -Name 'local additions follow the vendored paths' -Condition (
+        $result.Code -eq 0 -and $typos.Contains('"/docs/NOTICE.md",') -and
+        $typos.EndsWith("]`n`n[default.extend-words]`nWexley = `"Wexley`"`n"))
+    $result = Invoke-Install -Root $sandbox
+    Assert-Check -Name 'appended baselines remain current' -Condition ($result.Code -eq 0)
+    Remove-Item -LiteralPath $extra
+    $result = Invoke-Install -Root $sandbox -Arguments @('-Force')
+    $typos = [IO.File]::ReadAllText((Join-Path $sandbox '.github/lint/typos.toml'))
+    Assert-Check -Name 'removing the local file drops its additions' -Condition (
+        $result.Code -eq 0 -and -not $typos.Contains('Wexley'))
     [IO.File]::WriteAllText($local, "*.py`n")
     $result = Invoke-Install -Root $sandbox
     Assert-Check -Name 'invalid vendored paths fail' -Condition ($result.Code -ne 0)

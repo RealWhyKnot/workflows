@@ -219,6 +219,15 @@ foreach ($key in $plan.Keys) {
         continue
     }
     $text = Add-VendoredEntry -Key $key -Text $text -Entry $local
+    if ($key -match '^\.github/lint/[^/]+\.toml$') {
+        $extra = Join-Path $root ($key -replace '\.toml$', '.local.toml')
+        if (Test-Path -LiteralPath $extra -PathType Leaf) {
+            $addition = ([IO.File]::ReadAllText($extra) -replace "`r`n", "`n").Trim("`n")
+            if ($addition) {
+                $text = $text.TrimEnd("`n") + "`n`n" + $addition + "`n"
+            }
+        }
+    }
     $destination = Join-Path $root $key
     $exists = Test-Path -LiteralPath $destination -PathType Leaf
     $isCurrent = $false
