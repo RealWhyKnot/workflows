@@ -19,7 +19,7 @@ timeout 600 dotnet format Workflows.slnx --verify-no-changes --no-restore
 timeout 600 dotnet build Workflows.slnx -c Release --no-restore
 timeout 600 dotnet test Workflows.slnx -c Release --no-build
 timeout 600 dotnet run .github/lint/CSharpStyle.cs -- .
-if [[ ${OSTYPE} == msys* || ${OSTYPE} == cygwin* ]]; then
+if [[ ${OSTYPE} == msys* || ${OSTYPE} == cygwin* ]] && ! hash shellcheck shfmt actionlint 2>/dev/null; then
   windows_root=$(pwd -W)
   MSYS_NO_PATHCONV=1 timeout 180 wsl --distribution "${LINT_WSL_DISTRO:?Set LINT_WSL_DISTRO to your lint distro}" \
     --cd "${windows_root}" -- bash .githooks/check-shell
