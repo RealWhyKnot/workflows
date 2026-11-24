@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from style_configs import LINT_DIR, check_config
 from style_imports import check_imports
 from style_scan import Finding
-from style_sources import check_generated, check_source, language_of
+from style_sources import RustExpect, check_generated, check_source, language_of, rust_expects
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -26,7 +26,39 @@ ATTRIBUTE_SPAN = 6
 SEGMENT = r"(?!\.+/)[A-Za-z0-9_.@+-]+/"
 LEAF = r"(?!\.+$)[A-Za-z0-9_.@+-]+"
 ENTRY = re.compile(rf"/(?:{SEGMENT})+|/(?:{SEGMENT})*{LEAF}|{SEGMENT}")
-APPROVED_ENTRY = re.compile(rf"(/(?:{SEGMENT})*{LEAF})[ \t]+([A-Za-z][A-Za-z0-9_]*)")
+APPROVED_ENTRY = re.compile(rf"(/(?:{SEGMENT})*{LEAF})((?:[ \t]+\S+)+)")
+RULE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+RUST_LINT = re.compile(r"[a-z][a-z0-9_]*(?:::[a-z][a-z0-9_]*)?")
+RUST_LINT_GROUPS = frozenset(
+    {
+        "clippy",
+        "clippy::all",
+        "clippy::cargo",
+        "clippy::complexity",
+        "clippy::correctness",
+        "clippy::nursery",
+        "clippy::pedantic",
+        "clippy::perf",
+        "clippy::restriction",
+        "clippy::style",
+        "clippy::suspicious",
+        "deprecated_safe",
+        "future_incompatible",
+        "keyword_idents",
+        "let_underscore",
+        "nonstandard_style",
+        "refining_impl_trait",
+        "rust_2018_compatibility",
+        "rust_2018_idioms",
+        "rust_2021_compatibility",
+        "rust_2024_compatibility",
+        "rustdoc",
+        "rustdoc::all",
+        "unknown_or_malformed_diagnostic_attributes",
+        "unused",
+        "warnings",
+    },
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,20 +77,34 @@ class VendoredPaths:
 class Approval:
     number: int
     path: str
-    rule: str
+    rules: tuple[str, ...]
+
+
+def parse_approval(name: str, number: int, entry: str) -> Approval:
+    match = APPROVED_ENTRY.fullmatch(entry)
+    path = match.group(1) if match else ""
+    rules = tuple(match.group(2).split()) if match else ()
+    if not path.endswith(".rs"):
+        if len(rules) == 1 and RULE.fullmatch(rules[0]):
+            return Approval(number, path.lstrip("/"), rules)
+        message = f"{name}:{number}: {entry!r} isn't a /path/file from the repo root and a rule id"
+        raise ValueError(message)
+    if not all(RUST_LINT.fullmatch(lint) for lint in rules) or len(set(rules)) < len(rules):
+        message = f"{name}:{number}: {entry!r} isn't a /path/file.rs from the repo root and its lints, each named once"
+        raise ValueError(message)
+    groups = [lint for lint in rules if lint in RUST_LINT_GROUPS]
+    if groups:
+        message = f"{name}:{number}: {', '.join(groups)} is a lint group; name each lint on its own"
+        raise ValueError(message)
+    return Approval(number, path.lstrip("/"), rules)
 
 
 def read_approvals(path: Path) -> list[Approval]:
     approvals: list[Approval] = []
     for number, raw in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
         entry = raw.strip()
-        if not entry:
-            continue
-        match = APPROVED_ENTRY.fullmatch(entry)
-        if match is None:
-            message = f"{path.name}:{number}: {entry!r} isn't a /path/file from the repo root and a rule id"
-            raise ValueError(message)
-        approvals.append(Approval(number, match.group(1).lstrip("/"), match.group(2)))
+        if entry:
+            approvals.append(parse_approval(path.name, number, entry))
     return approvals
 
 
@@ -70,24 +116,53 @@ def attribute_text(root: Path, finding: Finding) -> str:
     return "\n".join(lines[max(finding.line - 1, 0) : finding.line - 1 + ATTRIBUTE_SPAN])
 
 
+def csharp_approved(root: Path, kept: list[Finding], approval: Approval) -> Finding | None:
+    rule = re.compile(
+        rf'^[^\n]*?\bSuppressMessage(?:Attribute)?\s*\(\s*"[^"\n]*"\s*,\s*"{re.escape(approval.rules[0])}\b',
+    )
+    return next(
+        (
+            finding
+            for finding in kept
+            if finding.path == approval.path
+            and finding.message == SUPPRESSION
+            and rule.search(attribute_text(root, finding))
+        ),
+        None,
+    )
+
+
+def rust_approved(kept: list[Finding], approval: Approval, left: list[RustExpect]) -> Finding | None:
+    wanted = frozenset(approval.rules)
+    for expect in left:
+        finding = Finding(approval.path, expect.line, SUPPRESSION)
+        if expect.lints == wanted and finding in kept:
+            left.remove(expect)
+            return finding
+    return None
+
+
+def file_expects(root: Path, path: str) -> list[RustExpect]:
+    try:
+        return rust_expects((root / path).read_text(encoding="utf-8-sig", errors="replace"))
+    except OSError:
+        return []
+
+
 def apply_approvals(root: Path, findings: list[Finding], approvals: list[Approval]) -> list[Finding]:
     kept = list(findings)
+    expects: dict[str, list[RustExpect]] = {}
     for approval in approvals:
-        rule = re.compile(
-            rf'^[^\n]*?\bSuppressMessage(?:Attribute)?\s*\(\s*"[^"\n]*"\s*,\s*"{re.escape(approval.rule)}\b',
-        )
-        approved = next(
-            (
-                finding
-                for finding in kept
-                if finding.path == approval.path
-                and finding.message == SUPPRESSION
-                and rule.search(attribute_text(root, finding))
-            ),
-            None,
-        )
+        if approval.path.endswith(".rs"):
+            if approval.path not in expects:
+                expects[approval.path] = file_expects(root, approval.path)
+            approved = rust_approved(kept, approval, expects[approval.path])
+            missing = f"expect({', '.join(approval.rules)})"
+        else:
+            approved = csharp_approved(root, kept, approval)
+            missing = f"{approval.rules[0]} suppression"
         if approved is None:
-            message = f"{approval.path} has no {approval.rule} suppression left; remove this line (GEN-4)"
+            message = f"{approval.path} has no {missing} left; remove this line (GEN-4)"
             kept.append(Finding(f"{LINT_DIR}/{APPROVED_FILE}", approval.number, message))
         else:
             kept.remove(approved)

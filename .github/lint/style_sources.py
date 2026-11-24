@@ -74,6 +74,13 @@ RUST_ALLOW_INSIDE = re.compile(r"\b(?:allow|expect)\s*\(|\brustfmt\s*::\s*skip\b
 RUST_TEST_MODULE = re.compile(
     r"#\[\s*cfg\s*\(\s*test\s*\)\s*\](?:\s*#\[[^\]]*\])*\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+\w+\s*\{",
 )
+RUST_EXPECT = re.compile(r"#\[\s*expect\s*\(")
+RUST_EXPECT_CLOSE = re.compile(r"\s*\]")
+RUST_EXPECT_LINT = re.compile(r"[a-z][a-z0-9_]*(?:\s*::\s*[a-z][a-z0-9_]*)?")
+RUST_REASON_KEY = re.compile(r"reason\s*=")
+RUST_REASON = re.compile(r'reason\s*=\s*(?:"((?:[^"\\]|\\.)*)"|r(#*)"(.*?)"\2)', re.DOTALL)
+OPENERS = "([{"
+CLOSERS = ")]}"
 CSHARP_SUPPRESSION = re.compile(r"\b(?:Unconditional)?SuppressMessage(?:Attribute)?\b")
 CSHARP_GENERATED_ATTRIBUTE = re.compile(
     r"[\[,]\s*(?:\w+\s*:\s*)?(?:global::)?(?:System\.CodeDom\.Compiler\.)?GeneratedCode(?:Attribute)?\s*[(\],]",
@@ -150,6 +157,70 @@ def check_rust(path: str, text: str) -> RustReport:
         close = find_closing_brace(code, match.end() - 1)
         test_lines += scan.line_of(close) - scan.line_of(match.start()) + 1
     return RustReport(findings, count_lines(text) - test_lines)
+
+
+@dataclass(frozen=True, slots=True)
+class Span:
+    begin: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
+class RustExpect:
+    line: int
+    lints: frozenset[str]
+
+
+def expect_arguments(code: str, start: int) -> list[Span]:
+    parts: list[Span] = []
+    depth = 0
+    begin = start
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in OPENERS:
+            depth += 1
+        elif char in CLOSERS and depth:
+            depth -= 1
+        elif char in CLOSERS:
+            if char != ")" or RUST_EXPECT_CLOSE.match(code, index + 1) is None:
+                return []
+            parts.append(Span(begin, index))
+            return parts
+        elif char == "," and not depth:
+            parts.append(Span(begin, index))
+            begin = index + 1
+    return []
+
+
+def expect_lints(text: str, code: str, start: int) -> frozenset[str]:
+    parts = expect_arguments(code, start)
+    lints: set[str] = set()
+    reasons = 0
+    for number, part in enumerate(parts):
+        piece = code[part.begin : part.end].strip()
+        if not piece and number and number == len(parts) - 1:
+            continue
+        if RUST_EXPECT_LINT.fullmatch(piece):
+            lints.add(re.sub(r"\s+", "", piece))
+            continue
+        if not RUST_REASON_KEY.fullmatch(piece):
+            return frozenset()
+        reason = RUST_REASON.fullmatch(text[part.begin : part.end].strip())
+        if reason is None or not (reason.group(1) or reason.group(3) or "").strip():
+            return frozenset()
+        reasons += 1
+    return frozenset(lints) if reasons == 1 else frozenset()
+
+
+def rust_expects(text: str) -> list[RustExpect]:
+    scan = Lexer(text, is_rust=True).run()
+    code = "".join(scan.code)
+    found: list[RustExpect] = []
+    for match in RUST_EXPECT.finditer(code):
+        lints = expect_lints(text, code, match.end())
+        if lints:
+            found.append(RustExpect(scan.line_of(match.start()), lints))
+    return found
 
 
 def check_csharp(path: str, text: str) -> list[Finding]:
