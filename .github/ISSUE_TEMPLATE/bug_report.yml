@@ -1,0 +1,37 @@
+name: Bug report
+description: A workflow, action, hook or lint config doesn't do what its docs say.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: ref
+    attributes:
+      label: Version you use
+      description: The tag or commit you pin, such as `v2026.10.28.0`.
+    validations:
+      required: true
+
+  - type: input
+    id: target
+    attributes:
+      label: Workflow or action
+      description: The file that misbehaves, such as `commit-msg-check.yml`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log output
+      description: The relevant lines from the run. Remove anything you don't want public.
+      render: text
+    validations:
+      required: false

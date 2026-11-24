@@ -3,7 +3,12 @@
 [![CI](https://github.com/RealWhyKnot/workflows/actions/workflows/ci.yml/badge.svg)](https://github.com/RealWhyKnot/workflows/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/RealWhyKnot/workflows)](https://github.com/RealWhyKnot/workflows/releases)
 
-The GitHub Actions, reusable workflows, git hooks and lint configs that my repos share.
+This is the set of GitHub Actions, reusable workflows, git hooks and lint configs I share between my
+own repos. It's built around how I work: Windows-first tooling, CalVer release tags
+(`vYYYY.M.D.N`) and a strict lint baseline where suppressions aren't allowed. It isn't a general
+drop-in toolkit, and things here may be rigid or break in a setup that doesn't match mine. You're
+welcome to read it, borrow from it or pin a release, but expect to adapt it. See
+[CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 ## Picking a version
 
@@ -253,7 +258,7 @@ A manifest is a tab-separated file with no header and one `hash  bytes  name` li
 first. Hashes are lowercase. `.tar.gz` drops both extensions (`app-1.0.0.tar.gz` gets
 `app-1.0.0.integrity.tsv`).
 
-Hash on the runner that built the archives and read the manifests later. VRCFaceTracking published
+Hash on the runner that built the archives and read the manifests later. One of my repos published
 wrong hashes for three releases because it downloaded a release asset to hash it, and
 `Start-Process gh api -RedirectStandardOutput` re-encodes a binary stream instead of copying the
 bytes.
@@ -819,31 +824,36 @@ isn't one of the beta gate's release types. A dependency bump on its own doesn't
 
 ## Versioning
 
-Releases are tagged by date, `vYYYY.M.D.N`, like my other repos. `N` is 0 for the first release of
-the day and goes up by one for each one after. Every release gets a GitHub release listing its
-changes, and `v1` moves to the newest. Tags up to `v1.6.2` are semantic versions and still work.
+Tags are dates, `vYYYY.M.D.N`, like my other repos. `N` is 0 for the first release of the day and goes up by one after that.
 
-Inside a release the shared workflows call the actions at that same tag. For example,
-`nightly-beta.yml@v2026.10.28.0` runs `nightly-plan@v2026.10.28.0`. Pinning or rolling back a
-workflow does the same to the actions it calls. On `main` they call `@v1`.
+- Every release gets a GitHub release listing its changes, and `v1` moves to the newest.
+- Tags up to `v1.6.2` are semantic versions and still work.
+- Any change outside docs, tests and this repo's own CI gets a release. A breaking change would get a new moving tag, `v2`, and `v1` would stay put.
 
-Any change outside docs, tests and this repo's own CI gets a release. A breaking change would get a
-new moving tag, `v2`, and `v1` would stay put.
+### Pinning
 
-To pin a repo, use a release tag like `@v2026.10.28.0` and set `shared-ref` on `conformance` to the
-same tag, or it will flag the pin.
+Inside a release, the shared workflows call the actions at that same tag. For example, `nightly-beta.yml@v2026.10.28.0` runs `nightly-plan@v2026.10.28.0`. Pinning or rolling back a workflow does the same to the actions it calls. On `main` they call `@v1`.
 
-After a push to `main` I run `.github/scripts/New-Release.ps1`. It waits for CI to pass on the
-commit, checks that something besides docs, tests or CI changed since the last release, tags the
-day's next number and moves `v1`. `-PlanOnly` prints the tag without creating anything. The tag push
-runs `release.yml`, which checks the tag's sequence, writes the notes with `release-notes` and
-publishes.
+To pin a repo, use a release tag like `@v2026.10.28.0` and set `shared-ref` on `conformance` to the same tag, or it will flag the pin.
 
-CI runs the `Test-*.ps1` scripts on ubuntu and windows, plus actionlint, `workflow-syntax` and
-`conformance` on this repo. `commits.yml` runs `commit-msg-check.yml` on this repo's own pushes and
-PRs, with stamps off and conventional subjects required. It is not meant for other repos.
+### Releasing
 
-`.githooks/pre-push` runs this repo's linters and tests. Turn it on with
-`git config core.hooksPath .githooks`. It needs pwsh with PSScriptAnalyzer, Node, uv and the .NET 10
-SDK. On Windows it runs the shell checks in WSL, in the distro named by `LINT_WSL_DISTRO`; that
-distro needs shellcheck, shfmt and actionlint.
+After a push to `main` I run `.github/scripts/New-Release.ps1`. It:
+
+1. Waits for CI to pass on the commit.
+2. Checks that something besides docs, tests or CI changed since the last release.
+3. Tags the day's next number and moves `v1`.
+
+`-PlanOnly` prints the tag without creating anything. The tag push runs `release.yml`, which checks the tag's sequence, writes the notes with `release-notes` and publishes.
+
+### CI
+
+CI runs the `Test-*.ps1` scripts on ubuntu and windows, plus actionlint, `workflow-syntax` and `conformance` on this repo. `commits.yml` runs `commit-msg-check.yml` on this repo's own pushes and PRs, with stamps off and conventional subjects required. It is not meant for other repos.
+
+### Pre-push hook
+
+`.githooks/pre-push` runs this repo's linters and tests. Turn it on with `git config core.hooksPath .githooks`. It needs pwsh with PSScriptAnalyzer, Node, uv and the .NET 10 SDK. On Windows it runs the shell checks in WSL, in the distro named by `LINT_WSL_DISTRO`; that distro needs shellcheck, shfmt and actionlint.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
