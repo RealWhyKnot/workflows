@@ -770,12 +770,13 @@ A C# `[SuppressMessage]` you've decided to keep goes in
 `.github/lint/approved-suppressions.local.txt`, one per line as `/path/file RULE`. Each line lets
 one attribute for that rule through in that file. A line that no longer matches one is a finding.
 
-A Rust `#[expect(...)]` goes in the same file as `/path/file.rs` and then every lint the attribute
-names, like `/src/win/devices.rs clippy::ref_as_ptr clippy::inline_always`. Each line lets one
-attribute through in that file if it names exactly those lints, in any order, and gives a
-`reason = "..."`. Lint groups like `clippy::pedantic` can't be listed. `#[allow]`, `#![expect]` and
-`cfg_attr` stay findings even when listed, since only an outer `expect` fails the build once it's
-no longer needed. A line that no longer matches one is a finding here too.
+To approve a Rust `#[expect(...)]`, add a line to the same file as the C# entries: `/path/file.rs`
+and then every lint the attribute names, like
+`/src/win/devices.rs clippy::ref_as_ptr clippy::inline_always`. Each line lets one attribute through
+in that file if it names exactly those lints, in any order, and gives a `reason = "..."`. Lint groups
+like `clippy::pedantic` can't be listed. `#[allow]` never fails once it's no longer needed,
+`#![expect]` covers a whole module or crate, and `cfg_attr` drops the expect on some builds, so all
+three stay findings even when listed. A line that no longer matches one is a finding here too.
 
 Files directly under `lint/<lang>/merge/` go inside a file your repo already has, like the
 `[workspace.lints]` table in `Cargo.toml`, and Install-Lint lists any line or key that file is
