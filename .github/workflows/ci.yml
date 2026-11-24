@@ -269,4 +269,4 @@ jobs:
           printf '%s\n' "${tool_directory}" >> "${GITHUB_PATH}"
 
       - name: Lint shell
-        run: bash .githooks/check-shell
+        run: bash .github/lint/check-shell

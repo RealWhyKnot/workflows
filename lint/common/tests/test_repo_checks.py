@@ -4,16 +4,35 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 from typing import override
 
 from lint.common.tests.test_style_check import SCRIPT, VENDORED, RepoCase, lines
 
-BASH = shutil.which("bash")
+WINDOWS = os.name == "nt"
 
 
-@unittest.skipIf(os.name == "nt" or not BASH, "Linux Bash is required")
+def find_bash() -> str | None:
+    if not WINDOWS:
+        return shutil.which("bash")
+    git = shutil.which("git")
+    if not git:
+        return None
+    folder = Path(git).resolve().parent
+    for parent in (folder, *folder.parents):
+        for relative in ("bin/bash.exe", "usr/bin/bash.exe"):
+            candidate = parent / relative
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+BASH = find_bash()
+
+
+@unittest.skipIf(not BASH, "Bash is required")
 class RepoChecksTests(RepoCase):
     bin = Path()
     log = Path()
@@ -32,20 +51,26 @@ class RepoChecksTests(RepoCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.log = self.root / "calls.jsonl"
-        self.environment = dict(os.environ, PATH=str(self.bin), CALL_LOG=str(self.log), CI="false")
-        for name in ("git", "mktemp", "rm", "cp", "timeout"):
-            executable = shutil.which(name)
-            self.assertIsNotNone(executable)
-            (self.bin / name).symlink_to(executable or name)
+        path = str(self.bin)
+        if WINDOWS:
+            root = Path(BASH or "").parent.parent
+            if root.name == "usr":
+                root = root.parent
+            path = os.pathsep.join([path, str(root / "usr" / "bin"), str(root / "cmd")])
+        self.environment = dict(os.environ, PATH=path, CALL_LOG=str(self.log), CI="false")
+        if not WINDOWS:
+            for name in ("git", "mktemp", "rm", "cp", "timeout"):
+                executable = shutil.which(name)
+                self.assertIsNotNone(executable)
+                (self.bin / name).symlink_to(executable or name)
         program = lines(
-            "#!/usr/bin/python3",
             "import json, os, pathlib, sys",
-            "name = pathlib.Path(sys.argv[0]).name",
+            "name = os.environ['TOOL_NAME']",
             "args = sys.argv[1:]",
             "record = [name, *args]",
             "if name == 'gitleaks' and args[0] == 'dir':",
             "    folder = pathlib.Path(args[-1])",
-            "    record.append(sorted(str(p.relative_to(folder)) for p in folder.rglob('*') if p.is_file()))",
+            "    record.append(sorted(p.relative_to(folder).as_posix() for p in folder.rglob('*') if p.is_file()))",
             "with open(os.environ['CALL_LOG'], 'a') as log:",
             "    log.write(json.dumps(record) + '\\n')",
             "if name == 'cargo' and args[0] == 'locate-project':",
@@ -55,9 +80,15 @@ class RepoChecksTests(RepoCase):
             "    print(manifest.resolve())",
             "sys.exit(1 if name == os.environ.get('FAIL_TOOL') else 0)",
         )
+        source = self.bin / "fake_tool.py"
+        _ = source.write_text(program, encoding="utf-8")
         for name in ("typos", "gitleaks", "actionlint", "zizmor", "cargo", "cargo-deny"):
             tool = self.bin / name
-            _ = tool.write_text(program, encoding="utf-8")
+            wrapper = lines(
+                "#!/bin/bash",
+                f'TOOL_NAME={name} exec "{Path(sys.executable).as_posix()}" "{source.as_posix()}" "$@"',
+            )
+            _ = tool.write_bytes(wrapper.encode("utf-8"))
             tool.chmod(0o755)
 
     def run_runner(self) -> subprocess.CompletedProcess[str]:
@@ -162,11 +193,9 @@ class RepoChecksTests(RepoCase):
         self.assertIn("custom/action.yml", scan)
         self.assertIn("--offline", scan)
 
-    def test_windows_delegates_to_the_named_distro(self) -> None:
-        _ = (self.bin / "wsl").write_bytes((self.bin / "typos").read_bytes())
-        (self.bin / "wsl").chmod(0o755)
-        self.environment["LINT_WSL_DISTRO"] = "lint-test"
-        program = 'OSTYPE=msys; pwd() { printf "%s\\n" "C:/test repo"; }; source "${1}"'
+    def test_windows_runs_natively_without_wsl(self) -> None:
+        _ = self.environment.pop("LINT_WSL_DISTRO", None)
+        program = 'OSTYPE=msys; source "${1}"'
         result = subprocess.run(
             [BASH or "bash", "-c", program, "bash", str(SCRIPT.with_name("repo_checks.sh"))],
             cwd=self.root,
@@ -178,21 +207,9 @@ class RepoChecksTests(RepoCase):
             timeout=60,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.calls(),
-            [
-                [
-                    "wsl",
-                    "--distribution",
-                    "lint-test",
-                    "--cd",
-                    "C:/test repo",
-                    "--",
-                    "bash",
-                    ".github/lint/repo_checks.sh",
-                ]
-            ],
-        )
+        names = [call[0] for call in self.calls()]
+        self.assertNotIn("wsl", names)
+        self.assertIn("typos", names)
 
 
 if __name__ == "__main__":

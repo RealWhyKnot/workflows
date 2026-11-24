@@ -758,8 +758,13 @@ found something and 2 means it couldn't run, for example because a local entry i
 Run `bash .github/lint/repo_checks.sh` from your pre-push hook and CI. It checks spelling, workflows
 and composite actions, secrets, and every Cargo workspace. Set `CI=true` to scan tracked checkout
 files for secrets; hooks scan commits that aren't on any remote. The runner uses typos, actionlint,
-zizmor, gitleaks and cargo-deny from `PATH` and reports missing tools. On Windows Git Bash, set
-`LINT_WSL_DISTRO` to the distro where you installed them.
+zizmor, gitleaks and cargo-deny from `PATH` and reports missing tools. It runs natively on Windows
+Git Bash, Linux and macOS.
+
+The shell language installs `.github/lint/check-shell`, which runs shellcheck, shfmt and
+`shell-style.awk` on tracked shell files. On Windows, run `pwsh .github/lint/Invoke-ShellChecks.ps1`
+instead: it finds Git's own `bash.exe`, puts Git's `usr\bin` on `PATH` for the run, and fails if
+shellcheck or shfmt is missing.
 
 A C# `[SuppressMessage]` you've decided to keep goes in
 `.github/lint/approved-suppressions.local.txt`, one per line as `/path/file RULE`. Each line lets
@@ -852,7 +857,7 @@ CI runs the `Test-*.ps1` scripts on ubuntu and windows, plus actionlint, `workfl
 
 ### Pre-push hook
 
-`.githooks/pre-push` runs this repo's linters and tests. Turn it on with `git config core.hooksPath .githooks`. It needs pwsh with PSScriptAnalyzer, Node, uv and the .NET 10 SDK. On Windows it runs the shell checks in WSL, in the distro named by `LINT_WSL_DISTRO`; that distro needs shellcheck, shfmt and actionlint.
+`.githooks/pre-push` runs this repo's linters and tests. Turn it on with `git config core.hooksPath .githooks`. It needs pwsh with PSScriptAnalyzer, Node, uv and the .NET 10 SDK. It also needs shellcheck, shfmt, typos, gitleaks, actionlint and zizmor on `PATH`. Run it from Git Bash on Windows, or from any shell on Linux and macOS.
 
 ## License
 

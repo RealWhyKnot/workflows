@@ -178,6 +178,17 @@ try {
         $editor.Contains("`n[{vendor,third_party,node_modules,.yarn,upstream}/**]`nignore = true`n") -and
         $editor.Contains("`n[**/{vendor,third_party,node_modules,.yarn,upstream}/**]`nignore = true`n") -and
         $editor.Contains("`n[docs/NOTICE.md]`nignore = true`n"))
+    $checker = '.github/lint/check-shell'
+    Assert-Check -Name 'shell install copies the native checker and its launcher' -Condition (
+        (Test-Path -LiteralPath (Join-Path $sandbox $checker)) -and
+        (Test-Path -LiteralPath (Join-Path $sandbox '.github/lint/Invoke-ShellChecks.ps1')))
+    $checkerBytes = [IO.File]::ReadAllBytes((Join-Path $sandbox $checker))
+    Assert-Check -Name 'the installed checker keeps LF line endings' -Condition ($checkerBytes -notcontains 13)
+    $mode = @(& git -C $sandbox ls-files --stage -- $checker)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the checker mode.' }
+    Assert-Check -Name 'the installed checker is executable in git' -Condition ($mode[0].StartsWith('100755 '))
+    $installed = [IO.File]::ReadAllText((Join-Path $sandbox $checker))
+    Assert-Check -Name 'the installed checker never calls WSL' -Condition ($installed -notmatch '\bwsl\b')
     [IO.File]::WriteAllText($local, '')
     [IO.File]::WriteAllText($local, "/docs/NOTICE.md`n/docs/LICENSE.txt`n")
     $result = Invoke-Install -Root $sandbox -Arguments @('-Lang', 'csharp,shell,typescript', '-Force')
